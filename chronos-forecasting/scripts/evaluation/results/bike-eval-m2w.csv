@@ -1,0 +1,2 @@
+dataset,model,MASE,WQL
+default,amazon/chronos-t5-small,0.7239392740021429,0.13829861029135504
