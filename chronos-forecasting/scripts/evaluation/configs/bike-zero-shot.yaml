@@ -1,0 +1,7 @@
+# Backtest configs for the 28 "zero-shot" datasets.
+# These datasets were not seen by Chronos models during training.
+- name: default
+  hf_repo: '/home/ubuntu/.jupyter/bike_day'
+  offset: -60
+  prediction_length: 7
+  num_rolls: 1
