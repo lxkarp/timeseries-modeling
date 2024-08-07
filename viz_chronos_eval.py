@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from gluonts.model.evaluation import evaluate_forecasts
 from gluonts.ev.metrics import MASE, MeanWeightedSumQuantileLoss, BaseMetricDefinition, DirectMetric
+from gluonts.ev.aggregations import Aggregation
 from scipy.stats import wasserstein_distance
 from gluonts.ev.aggregations import Mean, Sum
 
@@ -140,7 +141,44 @@ class EMD(BaseMetricDefinition):
             stat=partial(swd, forecast_type=self.forecast_type),
             aggregate=Mean(axis=0), # hard code as kludge
         )
-    
+
+
+@dataclass
+class List(Aggregation):
+    """
+    Map-reduce way of collecting values into a list.
+
+    `partial_result` represents one of two things, depending on the axis:
+    Case 1 - axis 0 is aggregated (axis is None or 0):
+        In each `step`, values are being collected into `partial_result` list.
+
+    Case 2 - axis 0 is not being aggregated:
+        In this case, `partial_result` is a list that in the end gets
+        concatenated to a np.ndarray.
+    """
+
+    partial_result: Optional[Union[List[np.ndarray], np.ndarray]] = None
+
+    def step(self, values: np.ndarray) -> None:
+        assert self.axis is None or isinstance(self.axis, tuple)
+
+        if self.partial_result is None:
+            self.partial_result = []
+
+        if self.axis is None or 0 in self.axis:
+            self.partial_result.append(values)
+        else:
+            assert isinstance(self.partial_result, list)
+            self.partial_result.append(values)
+
+    def get(self) -> np.ndarray:
+        assert self.axis is None or isinstance(self.axis, tuple)
+
+        if self.axis is None or 0 in self.axis:
+            return self.partial_result
+
+        assert isinstance(self.partial_result, list)
+        return np.concatenate(self.partial_result)
 
 
 if __name__ == '__main__':
