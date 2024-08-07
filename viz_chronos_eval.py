@@ -1,30 +1,13 @@
 from evaluate import generate_sample_forecasts, ChronosPipeline, load_and_split_dataset
-
+from metrics import MASEna, MeanWeightedSumQuantileLossna, EMDna
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from gluonts.model.evaluation import evaluate_forecasts
-from gluonts.ev.metrics import MASE, MeanWeightedSumQuantileLoss, BaseMetricDefinition, DirectMetric
-from gluonts.ev.aggregations import Aggregation
-from scipy.stats import wasserstein_distance
-from gluonts.ev.aggregations import Mean, Sum
 
 import os
 import yaml
-from functools import partial
-from dataclasses import dataclass
 from pprint import pprint as print
-
-from typing import (
-    Collection,
-    Optional,
-    Callable,
-    Mapping,
-    Dict,
-    List,
-    Iterator,
-)
-from typing_extensions import Protocol, runtime_checkable, Self
 
 
 # config
@@ -40,14 +23,14 @@ pipeline = ChronosPipeline.from_pretrained(
     torch_dtype=torch_dtype,
 )
 
-def load_config(path : str):
-    if not config_file_path:
-        raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
+
+def load_config(config_file_path : str):
     with open(config_file_path) as fp:
         backtest_configs = yaml.safe_load(fp)
     # !!! you can only have a single config in your yaml
-    config = backtest_configs[0] 
+    config = backtest_configs[0]
     return config
+
 
 def mk_forecasts(test_data):
     sample_forecasts = generate_sample_forecasts(
@@ -62,31 +45,31 @@ def mk_forecasts(test_data):
     )
     return sample_forecasts
 
+
 def mk_metrics(context, forecast):
-    metrics = (
-            evaluate_forecasts(
+    metrics = evaluate_forecasts(
                 forecast,
                 test_data=context,
                 metrics=[
-                    MASE(),
-                    MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
-                    EMD(),
+                    MASEna(),
+                    MeanWeightedSumQuantileLossna(np.arange(0.1, 1.0, 0.1)),
+                    EMDna(),
                 ],
                 batch_size=5000,
             )
-            .reset_index(drop=True).rename(
-            {"MASE[0.5]": "MASE", "mean_weighted_sum_quantile_loss": "WQL", "EMD[0.5]":"EMD"},
-            axis="columns",
-        )
-            .to_dict(orient="records")
-        )
+            .reset_index(drop=True)
+            .rename(
+                {"MASE[0.5]": "MASE", "mean_weighted_sum_quantile_loss": "WQL", "EMD[0.5]":"EMD"},
+                axis="columns",
+        ).to_dict(orient="records")
 
-    return metrics[0] # !!OJO!! Magic numbers to remove the list
+    return metrics[0]  # !!OJO!! Magic numbers to remove the list
+
 
 def mk_viz(context, forecast, config):
     metrics = mk_metrics(context, forecast)
     context = [item for item in context]
-    
+
     context_by_category = {'casual': context[0][0], 'registered': context[1][0]}
     actuals_by_category = {'casual': context[0][1], 'registered': context[1][1]}
     forecasts_by_category = {'casual': forecast[0], 'registered': forecast[1]}
@@ -97,92 +80,20 @@ def mk_viz(context, forecast, config):
 
         plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq='D')
         fig, ax = plt.subplots()
-    
+
         ax.plot(plot_dates, np.append(cat_data['target'], actuals_by_category[cat]['target']))
         forecasts_by_category[cat].plot(ax=ax, show_label=True)
         fig.autofmt_xdate()
         plt.suptitle(f'Chronos {cat} {config["segment_name"]} Forecasts', fontsize=18)
-        plt.title('metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}'.format(**metrics), fontsize = 10, y=1)
+        plt.title('metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}'.format(**metrics), fontsize=10, y=1)
         plt.legend()
         plt.savefig(f'./chronos_{cat}_{config["segment_name"]}.png')
 
 
-def wd(data, forecast_type: str) -> np.ndarray:
-    return_wd = np.ndarray((len(data['label'])))
-    
-    for i in range(len(data['label'])):
-        return_wd += wasserstein_distance(data['label'][i]._get_data(), data[forecast_type][i])
-    return return_wd
-
-def swd(data, forecast_type: str) -> np.ndarray:
-    """
-    scaled wasserstein
-    """
-    return_wd = np.ndarray((len(data['label'])))
-    
-    for i in range(len(data['label'])):
-        norm_pred = data['label'][i]._get_data() / data['seasonal_error'][i]
-        norm_actuals = data[forecast_type][i] / data['seasonal_error'][i]
-        return_wd += wasserstein_distance(norm_pred, norm_actuals)
-    return return_wd
-
-
-@dataclass 
-class EMD(BaseMetricDefinition):
-    """
-    Earth Mover's Distance (EMD) metric.
-    """
-
-    forecast_type: str = "0.5"
-
-    def __call__(self, axis: int) -> DirectMetric:
-        return DirectMetric(
-            name=f"EMD[{self.forecast_type}]",
-            stat=partial(swd, forecast_type=self.forecast_type),
-            aggregate=Mean(axis=0), # hard code as kludge
-        )
-
-
-@dataclass
-class List(Aggregation):
-    """
-    Map-reduce way of collecting values into a list.
-
-    `partial_result` represents one of two things, depending on the axis:
-    Case 1 - axis 0 is aggregated (axis is None or 0):
-        In each `step`, values are being collected into `partial_result` list.
-
-    Case 2 - axis 0 is not being aggregated:
-        In this case, `partial_result` is a list that in the end gets
-        concatenated to a np.ndarray.
-    """
-
-    partial_result: Optional[Union[List[np.ndarray], np.ndarray]] = None
-
-    def step(self, values: np.ndarray) -> None:
-        assert self.axis is None or isinstance(self.axis, tuple)
-
-        if self.partial_result is None:
-            self.partial_result = []
-
-        if self.axis is None or 0 in self.axis:
-            self.partial_result.append(values)
-        else:
-            assert isinstance(self.partial_result, list)
-            self.partial_result.append(values)
-
-    def get(self) -> np.ndarray:
-        assert self.axis is None or isinstance(self.axis, tuple)
-
-        if self.axis is None or 0 in self.axis:
-            return self.partial_result
-
-        assert isinstance(self.partial_result, list)
-        return np.concatenate(self.partial_result)
-
-
 if __name__ == '__main__':
     config_file_path = os.environ.get('CHRONOS_EVAL_CONFIG')
+    if config_file_path is None:
+        raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
     config = load_config(config_file_path)
     test_data = load_and_split_dataset(backtest_config=config)
     forecast = mk_forecasts(test_data)
