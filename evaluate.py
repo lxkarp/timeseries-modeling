@@ -245,6 +245,7 @@ def generate_sample_forecasts(
                 context,
                 prediction_length=prediction_length,
                 num_samples=num_samples,
+                limit_prediction_length=False,
                 **predict_kwargs,
             ).numpy()
         )
