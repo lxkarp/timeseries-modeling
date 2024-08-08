@@ -2,7 +2,7 @@ from gluonts.ev.metrics import (
     BaseMetricDefinition,
     DirectMetric,
     DerivedMetric,
-    SumQuantileLoss,
+    WeightedSumQuantileLoss,
 )
 from gluonts.ev.aggregations import Aggregation
 from scipy.stats import wasserstein_distance
@@ -45,7 +45,7 @@ def swd(data, forecast_type: str) -> np.ndarray:
 
 
 @dataclass 
-class EMDna(BaseMetricDefinition):
+class EMD(BaseMetricDefinition):
     """
     Earth Mover's Distance (EMD) metric.
     """
@@ -56,7 +56,7 @@ class EMDna(BaseMetricDefinition):
         return DirectMetric(
             name=f"EMD[{self.forecast_type}]",
             stat=partial(swd, forecast_type=self.forecast_type),
-            aggregate=ListAgg(axis=0),  # hard code as kludge
+            aggregate=Mean(axis=0),
         )
 
 
@@ -79,7 +79,7 @@ class MASEna(BaseMetricDefinition):
 
 
 @dataclass
-class MeanSumQuantileLossna(BaseMetricDefinition):
+class MeanWeightedSumQuantileLossna(BaseMetricDefinition):
     quantile_levels: Collection[float]
 
     @staticmethod
@@ -101,7 +101,7 @@ class MeanSumQuantileLossna(BaseMetricDefinition):
         return DerivedMetric(
             name="mean_sum_quantile_loss",
             metrics={
-                f"quantile_loss[{q}]": SumQuantileLoss(q=q)(axis=axis)
+                f"quantile_loss[{q}]": WeightedSumQuantileLoss(q=q)(axis=axis)
                 for q in self.quantile_levels
             },
             post_process=self.noagg,
@@ -109,7 +109,7 @@ class MeanSumQuantileLossna(BaseMetricDefinition):
 
 
 @dataclass
-class ListAgg(Aggregation[np.ndarray]):
+class ListAgg(Aggregation):
     """
     Map-reduce way of collecting values into a list.
 
@@ -131,10 +131,13 @@ class ListAgg(Aggregation[np.ndarray]):
             self.partial_result = []
 
         if self.axis is None or 0 in self.axis:
-            self.partial_result.append(values)
+            print()
+            print("values: ", values)
+            print("partial result: ", self.partial_result)
+            self.partial_result = np.concatenate([self.partial_result, values])
         else:
-            assert isinstance(self.partial_result, list)
-            self.partial_result.append(values)
+            assert isinstance(self.partial_result, np.ndarray)
+            self.partial_result = np.concatenate([self.partial_result, values])
 
     def get(self) -> np.ndarray:
         assert self.axis is None or isinstance(self.axis, tuple)

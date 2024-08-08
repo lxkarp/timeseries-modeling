@@ -1,5 +1,6 @@
 from evaluate import generate_sample_forecasts, ChronosPipeline, load_and_split_dataset
-from metrics import MASEna, MeanWeightedSumQuantileLossna, EMDna
+from metrics import EMD
+from gluonts.ev.metrics import MASE, MeanWeightedSumQuantileLoss
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -51,17 +52,17 @@ def mk_metrics(context, forecast):
                 forecast,
                 test_data=context,
                 metrics=[
-                    MASEna(),
-                    MeanWeightedSumQuantileLossna(np.arange(0.1, 1.0, 0.1)),
-                    EMDna(),
+                    MASE(),
+                    MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
+                    EMD(),
                 ],
                 batch_size=5000,
-            )
-            .reset_index(drop=True)
-            .rename(
-                {"MASE[0.5]": "MASE", "mean_weighted_sum_quantile_loss": "WQL", "EMD[0.5]":"EMD"},
-                axis="columns",
-        ).to_dict(orient="records")
+    ).reset_index(
+            drop=True
+    ).rename(
+            {"MASE[0.5]": "MASE", "mean_weighted_sum_quantile_loss": "WQL", "EMD[0.5]":"EMD"},
+            axis="columns",
+    ).to_dict(orient="records")
 
     return metrics[0]  # !!OJO!! Magic numbers to remove the list
 
