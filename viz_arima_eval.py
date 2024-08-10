@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from gluonts.model.evaluation import evaluate_forecasts
-from gluonts.ext.prophet import ProphetPredictor
+from gluonts.ext.r_forecast import RForecastPredictor
 from gluonts.evaluation import make_evaluation_predictions
+from _evaluator import IntermittentEvaluator
 
 import os
 import yaml
@@ -23,7 +24,7 @@ def load_config(config_file_path : str):
 def mk_forecasts(test_data, config):
     prediction_length = np.abs(config['offset'])
     season_length = config['expected_seasonality']
-    pipeline = ProphetPredictor(prediction_length=prediction_length)
+    pipeline = RForecastPredictor(prediction_length=prediction_length, freq="D", method_name="arima")
     forecast_it, ts_it = make_evaluation_predictions(
         dataset=test_data,  # test dataset
         predictor=pipeline,  # predictor
@@ -32,7 +33,7 @@ def mk_forecasts(test_data, config):
 
     sample_forecasts = list(forecast_it)
 
-    return sample_forecasts
+    return sample_forecasts, list(ts_it)
 
 
 def mk_metrics(context, forecast):
@@ -85,8 +86,15 @@ if __name__ == '__main__':
         raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
     config = load_config(config_file_path)
     test_data = load_and_split_dataset(backtest_config=config)
-    forecast = mk_forecasts(test_data, config)
-    print(forecast[0])
+    forecast, tss = mk_forecasts(test_data, config)
+    print(forecast)
+
+    print("Generating ARIMA forecasts.......")
+    evaluator = IntermittentEvaluator(quantiles=[0.25,0.5,0.75], calculate_spec=True)
+    arima_agg_metrics, arima_item_metrics = evaluator(
+        iter(tss), iter(forecast), num_series=len(test_data)
+    )
+
     fig, ax = plt.subplots()
     forecast[0].plot(ax=ax, show_label=True)
     plt.savefig('ughghusdghusd.png')
