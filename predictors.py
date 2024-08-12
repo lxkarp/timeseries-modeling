@@ -123,9 +123,9 @@ class ARIMAPredictor(RepresentablePredictor):
         params = self.arima_params.copy()
 
         for entry in dataset:
-            data = self._make_prophet_data_entry(entry)
+            data = self._make_ARIMA_data_entry(entry)
 
-            forecast_samples = self._run_prophet(data, params)
+            forecast_samples = self._run_ARIMA(data, params)
 
             yield SampleForecast(
                 samples=forecast_samples,
@@ -134,17 +134,18 @@ class ARIMAPredictor(RepresentablePredictor):
                 info=entry.get("info"),
             )
 
-    def _run_prophet(self, data: ARIMADataEntry, params: dict) -> np.ndarray:
+    def _run_ARIMA(self, data: ARIMADataEntry, params: dict) -> np.ndarray:
         """
-        Construct and run a :class:`Prophet` model on the given
-        :class:`ProphetDataEntry` and return the resulting array of samples.
+        Construct and run a :class:`ARIMA` model on the given
+        :class:`ARIMADataEntry` and return the resulting array of samples.
         """
 
         forecaster = self.init_model(autoARIMA(**params))
+        forecast = forecaster.fit_predict(y=data.arima_training_data, fh=np.arange(data.prediction_length))
+        print("intermediary", forecast.T.to_numpy())
+        return forecast.T.to_numpy()
 
-        return forecaster.fit_predict(y=data.arima_training_data, fh=np.arange(data.prediction_length))
-
-    def _make_prophet_data_entry(self, entry: DataEntry) -> ARIMADataEntry:
+    def _make_ARIMA_data_entry(self, entry: DataEntry) -> ARIMADataEntry:
         """
         Construct a :class:`ARIMADataEntry` from a regular
         :class:`DataEntry`.

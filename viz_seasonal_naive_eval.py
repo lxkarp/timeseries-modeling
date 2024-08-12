@@ -12,6 +12,8 @@ import os
 import yaml
 from pprint import pprint as print
 
+model_name = "Naive"
+
 def load_config(config_file_path : str):
     with open(config_file_path) as fp:
         backtest_configs = yaml.safe_load(fp)
@@ -67,16 +69,16 @@ def mk_viz(context, forecast, config):
         context_data_length = len(cat_data['target'])
         context_data_start = cat_data['start'].to_timestamp()
 
-        plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=pd.infer_freq(context_by_category['casual']['timestamp']))
+        plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=cat_data['start'].freq)
         fig, ax = plt.subplots()
 
         ax.plot(plot_dates, np.append(cat_data['target'], actuals_by_category[cat]['target']))
         forecasts_by_category[cat].plot(ax=ax, show_label=True)
         fig.autofmt_xdate()
-        plt.suptitle(f'Chronos {cat} {config["segment_name"]} Forecasts', fontsize=18)
+        plt.suptitle(f'{model_name} {cat} {config["segment_name"]} Forecasts', fontsize=18)
         plt.title('metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}'.format(**metrics), fontsize=10, y=1)
         plt.legend()
-        plt.savefig(f'./chronos_{cat}_{config["segment_name"]}.png')
+        plt.savefig(f'./{model_name}_{cat}_{config["segment_name"]}.png')
 
 
 if __name__ == '__main__':
@@ -84,11 +86,6 @@ if __name__ == '__main__':
     if config_file_path is None:
         raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
     config = load_config(config_file_path)
-    test_data = load_and_split_dataset(backtest_config=config)
-    forecast = mk_forecasts(test_data, config)
-    print(forecast)
-    fig, ax = plt.subplots()
-    forecast[0].plot(ax=ax, show_label=True)
-    plt.savefig('ughghusdghusd.png')
-    # mk_viz(test_data, forecast, config)
-    # print(mk_metrics(test_data, forecast))
+    setup_data, test_data = load_and_split_dataset(backtest_config=config)
+    forecast = mk_forecasts(setup_data, config)
+    mk_viz(test_data, forecast, config)
