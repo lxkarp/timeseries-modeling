@@ -202,10 +202,8 @@ def load_and_split_dataset(backtest_config: dict):
     gts_dataset = to_gluonts_univariate(ds)
 
     # Split dataset for evaluation
-    # _, test_template = split(gts_dataset, offset=offset)
-    # test_data = test_template.generate_instances(prediction_length, windows=num_rolls)
+    _, test_template = split(gts_dataset, offset=offset)
+    test_data = test_template.generate_instances(prediction_length, windows=num_rolls)
 
-    test_data = gts_dataset
-
-    return test_data
+    return gts_dataset, test_data
 

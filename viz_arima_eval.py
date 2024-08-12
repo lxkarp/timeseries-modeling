@@ -5,13 +5,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from gluonts.model.evaluation import evaluate_forecasts
-from gluonts.ext.r_forecast import RForecastPredictor
+from predictors import ARIMAPredictor
 from gluonts.evaluation import make_evaluation_predictions
-from _evaluator import IntermittentEvaluator
 
 import os
 import yaml
 from pprint import pprint as print
+
+model_name = "ARIMA"
 
 def load_config(config_file_path : str):
     with open(config_file_path) as fp:
@@ -24,16 +25,16 @@ def load_config(config_file_path : str):
 def mk_forecasts(test_data, config):
     prediction_length = np.abs(config['offset'])
     season_length = config['expected_seasonality']
-    pipeline = RForecastPredictor(prediction_length=prediction_length, freq="D", method_name="arima")
+    pipeline = ARIMAPredictor(prediction_length=prediction_length)
     forecast_it, ts_it = make_evaluation_predictions(
         dataset=test_data,  # test dataset
         predictor=pipeline,  # predictor
-        num_samples=1,  # number of sample paths we want for evaluation
+        num_samples=20,  # number of sample paths we want for evaluation
     )
 
     sample_forecasts = list(forecast_it)
 
-    return sample_forecasts, list(ts_it)
+    return sample_forecasts
 
 
 def mk_metrics(context, forecast):
@@ -68,16 +69,16 @@ def mk_viz(context, forecast, config):
         context_data_length = len(cat_data['target'])
         context_data_start = cat_data['start'].to_timestamp()
 
-        plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=pd.infer_freq(context_by_category['casual']['timestamp']))
+        plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=cat_data['start'].freq)
         fig, ax = plt.subplots()
 
         ax.plot(plot_dates, np.append(cat_data['target'], actuals_by_category[cat]['target']))
         forecasts_by_category[cat].plot(ax=ax, show_label=True)
         fig.autofmt_xdate()
-        plt.suptitle(f'Chronos {cat} {config["segment_name"]} Forecasts', fontsize=18)
+        plt.suptitle(f'{model_name} {cat} {config["segment_name"]} Forecasts', fontsize=18)
         plt.title('metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}'.format(**metrics), fontsize=10, y=1)
         plt.legend()
-        plt.savefig(f'./chronos_{cat}_{config["segment_name"]}.png')
+        plt.savefig(f'./{model_name}_{cat}_{config["segment_name"]}.png')
 
 
 if __name__ == '__main__':
@@ -85,18 +86,6 @@ if __name__ == '__main__':
     if config_file_path is None:
         raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
     config = load_config(config_file_path)
-    test_data = load_and_split_dataset(backtest_config=config)
-    forecast, tss = mk_forecasts(test_data, config)
-    print(forecast)
-
-    print("Generating ARIMA forecasts.......")
-    evaluator = IntermittentEvaluator(quantiles=[0.25,0.5,0.75], calculate_spec=True)
-    arima_agg_metrics, arima_item_metrics = evaluator(
-        iter(tss), iter(forecast), num_series=len(test_data)
-    )
-
-    fig, ax = plt.subplots()
-    forecast[0].plot(ax=ax, show_label=True)
-    plt.savefig('ughghusdghusd.png')
-    # mk_viz(test_data, forecast, config)
-    # print(mk_metrics(test_data, forecast))
+    setup_data, test_data = load_and_split_dataset(backtest_config=config)
+    forecast = mk_forecasts(setup_data, config)
+    mk_viz(test_data, forecast, config)
