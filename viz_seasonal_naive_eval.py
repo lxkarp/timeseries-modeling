@@ -10,7 +10,7 @@ from gluonts.evaluation import make_evaluation_predictions
 
 import os
 import yaml
-from pprint import pprint as print
+# from pprint import pprint as print
 
 model_name = "Naive"
 
@@ -59,33 +59,43 @@ def mk_metrics(context, forecast):
 
 def mk_viz(context, forecast, config):
     metrics = mk_metrics(context, forecast)
-    context = [item for item in context]
+    # _context = [item for item in context]
+    _context = context
 
-    context_by_category = {'casual': context[0][0], 'registered': context[1][0]}
-    actuals_by_category = {'casual': context[0][1], 'registered': context[1][1]}
-    forecasts_by_category = {'casual': forecast[0], 'registered': forecast[1]}
+    # just the training data, no data for any of the prediction period
+    # context = _context[0]
+    # just the ground-truth
+    # actuals = _context[1]
+    forecasts = forecast[0]
 
-    for cat, cat_data in context_by_category.items():
-        context_data_length = len(cat_data['target'])
-        context_data_start = cat_data['start'].to_timestamp()
+    # for cat, cat_data in context_by_category.items():
+    cat = config['category']
 
-        plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=cat_data['start'].freq)
-        fig, ax = plt.subplots()
+    print(_context.input)
+    context_data_length = len(_context.input['target'])
+    context_data_start = _context.input['start'].to_timestamp()
 
-        ax.plot(plot_dates, np.append(cat_data['target'], actuals_by_category[cat]['target']))
-        forecasts_by_category[cat].plot(ax=ax, show_label=True)
-        fig.autofmt_xdate()
-        plt.suptitle(f'{model_name} {cat} {config["segment_name"]} Forecasts', fontsize=18)
-        plt.title('metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}'.format(**metrics), fontsize=10, y=1)
-        plt.legend()
-        plt.savefig(f'./{model_name}_{cat}_{config["segment_name"]}.png')
+    plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=_context.input['start'].freq)
+    fig, ax = plt.subplots()
+
+    ax.plot(plot_dates, _context.input)
+    # ax.plot(plot_dates, np.append(cat_data['target'], actuals_by_category[cat]['target']))
+    forecasts.plot(ax=ax, show_label=True)
+    fig.autofmt_xdate()
+    plt.suptitle(f'{model_name} {cat} {config["segment_name"]} Forecasts', fontsize=18)
+    plt.title('metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}'.format(**metrics), fontsize=10, y=1)
+    plt.legend()
+    plt.savefig(f'./{model_name}_{cat}_{config["segment_name"]}.png')
 
 
 if __name__ == '__main__':
     config_file_path = os.environ.get('CHRONOS_EVAL_CONFIG')
     if config_file_path is None:
         raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
-    config = load_config(config_file_path)
-    setup_data, test_data = load_and_split_dataset(backtest_config=config)
-    forecast = mk_forecasts(setup_data, config)
-    mk_viz(test_data, forecast, config)
+    for category in ["registered", "casual"]:
+        config = load_config(config_file_path)
+        config['hf_repo'] = os.path.join(config['hf_repo'], category)
+        config['category'] = category
+        setup_data, test_data = load_and_split_dataset(backtest_config=config)
+        forecast = mk_forecasts(setup_data, config)
+        mk_viz(test_data, forecast, config)
