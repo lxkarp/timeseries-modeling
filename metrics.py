@@ -3,17 +3,22 @@ from gluonts.ev.metrics import (
     DirectMetric,
     DerivedMetric,
     WeightedSumQuantileLoss,
+    MASE,
+    MeanWeightedSumQuantileLoss,
 )
+
 from gluonts.ev.aggregations import Aggregation
 from scipy.stats import wasserstein_distance
 from gluonts.ev.aggregations import Mean
-
+from gluonts.model.evaluation import evaluate_forecasts
 from gluonts.ev.stats import absolute_scaled_error
 
 from functools import partial
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from typing import (
     Collection,
@@ -26,8 +31,10 @@ from typing import (
 def wd(data, forecast_type: str) -> np.ndarray:
     return_wd: List[np.float64] = []
 
-    for i in range(len(data['label'])):
-        return_wd.append(wasserstein_distance(data['label'][i]._get_data(), data[forecast_type][i]))
+    for i in range(len(data["label"])):
+        return_wd.append(
+            wasserstein_distance(data["label"][i]._get_data(), data[forecast_type][i])
+        )
     return np.array(return_wd)
 
 
@@ -37,14 +44,14 @@ def swd(data, forecast_type: str) -> np.ndarray:
     """
     return_wd: List[np.float64] = []
 
-    for i in range(len(data['label'])):
-        norm_pred = data['label'][i]._get_data() / data['seasonal_error'][i]
-        norm_actuals = data[forecast_type][i] / data['seasonal_error'][i]
+    for i in range(len(data["label"])):
+        norm_pred = data["label"][i]._get_data() / data["seasonal_error"][i]
+        norm_actuals = data[forecast_type][i] / data["seasonal_error"][i]
         return_wd.append(wasserstein_distance(norm_pred, norm_actuals))
     return np.array(return_wd)
 
 
-@dataclass 
+@dataclass
 class EMD(BaseMetricDefinition):
     """
     Earth Mover's Distance (EMD) metric.
@@ -71,9 +78,7 @@ class MASEna(BaseMetricDefinition):
     def __call__(self, axis: Optional[int] = None) -> DirectMetric:
         return DirectMetric(
             name=f"MASE[{self.forecast_type}]",
-            stat=partial(
-                absolute_scaled_error, forecast_type=self.forecast_type
-            ),
+            stat=partial(absolute_scaled_error, forecast_type=self.forecast_type),
             aggregate=ListAgg(axis=axis),
         )
 
@@ -147,3 +152,64 @@ class ListAgg(Aggregation):
 
         assert isinstance(self.partial_result, list)
         return np.concatenate(self.partial_result)
+
+
+def mk_metrics(context, forecast):
+    metrics = (
+        evaluate_forecasts(
+            forecast,
+            test_data=context,
+            metrics=[
+                MASE(),
+                MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
+                EMD(),
+            ],
+            batch_size=5000,
+        )
+        .reset_index(drop=True)
+        .rename(
+            {
+                "MASE[0.5]": "MASE",
+                "mean_weighted_sum_quantile_loss": "WQL",
+                "EMD[0.5]": "EMD",
+            },
+            axis="columns",
+        )
+        .to_dict(orient="records")
+    )
+
+    return metrics[0]  # !!OJO!! Magic numbers to remove the list
+
+
+def mk_viz(context, forecast, config):
+    metrics = mk_metrics(context, forecast)
+    _context = context.label
+
+    forecasts = forecast[0]
+    cat = config["category"]
+
+    graph_data_length = len(_context.test_data.dataset[0]["target"])
+
+    context_data_start = _context.test_data.dataset[0]["start"].to_timestamp()
+
+    plot_dates = pd.date_range(
+        start=context_data_start,
+        periods=graph_data_length,
+        freq=_context.test_data.dataset[0]["start"].freq,
+    )
+    fig, ax = plt.subplots()
+
+    # plot the line of all the actuals
+
+    ax.plot(plot_dates, _context.test_data.dataset[0]["target"])
+
+    forecasts.plot(ax=ax, show_label=True)
+    fig.autofmt_xdate()
+    plt.suptitle(
+        f'{config["model_name"]} {cat} {config["segment_name"]} Forecasts', fontsize=18
+    )
+    plt.title(
+        "metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}".format(**metrics), fontsize=10, y=1
+    )
+    plt.legend()
+    plt.savefig(f'./{config["model_name"]}_{cat}_{config["segment_name"]}.png')
