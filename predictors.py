@@ -13,6 +13,11 @@ try:
     from sktime.forecasting.statsforecast import StatsForecastAutoARIMA as autoARIMA
 except ImportError:
     autoARIMA = None
+from gluonts.ext.prophet import ProphetPredictor as ProphetPredictor
+from gluonts.model.seasonal_naive import (
+    SeasonalNaivePredictor as SeasonalNaivePredictor,
+)
+
 
 SKT_AUTOARIMA_IS_INSTALLED = autoARIMA is not None
 
@@ -141,7 +146,9 @@ class ARIMAPredictor(RepresentablePredictor):
         """
 
         forecaster = self.init_model(autoARIMA(**params))
-        forecast = forecaster.fit_predict(y=data.arima_training_data, fh=np.arange(data.prediction_length))
+        forecast = forecaster.fit_predict(
+            y=data.arima_training_data, fh=np.arange(data.prediction_length)
+        )
         print("intermediary", forecast.T.to_numpy())
         return forecast.T.to_numpy()
 
