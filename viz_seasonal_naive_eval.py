@@ -60,7 +60,7 @@ def mk_metrics(context, forecast):
 def mk_viz(context, forecast, config):
     metrics = mk_metrics(context, forecast)
     # _context = [item for item in context]
-    _context = context
+    _context = context.label
 
     # just the training data, no data for any of the prediction period
     # context = _context[0]
@@ -71,14 +71,17 @@ def mk_viz(context, forecast, config):
     # for cat, cat_data in context_by_category.items():
     cat = config['category']
 
-    print(_context.input)
-    context_data_length = len(_context.input['target'])
-    context_data_start = _context.input['start'].to_timestamp()
+    # print(_context.test_data.dataset[0])
+    graph_data_length = len(_context.test_data.dataset[0]['target'])
+    print(graph_data_length)
+    context_data_start = _context.test_data.dataset[0]['start'].to_timestamp()
 
-    plot_dates = pd.date_range(start=context_data_start, periods=config['prediction_length']+context_data_length, freq=_context.input['start'].freq)
+    plot_dates = pd.date_range(start=context_data_start, periods=graph_data_length, freq=_context.test_data.dataset[0]['start'].freq)
     fig, ax = plt.subplots()
 
-    ax.plot(plot_dates, _context.input)
+    # plot the line of all the actuals
+    ax.plot(plot_dates, _context.test_data.dataset[0]['target'])
+
     # ax.plot(plot_dates, np.append(cat_data['target'], actuals_by_category[cat]['target']))
     forecasts.plot(ax=ax, show_label=True)
     fig.autofmt_xdate()
