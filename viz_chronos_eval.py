@@ -56,6 +56,7 @@ if __name__ == '__main__':
         config = load_config(config_file_path)
         config["hf_repo"] = os.path.join(config["hf_repo"], category)
         config["category"] = category
+        config["model_name"] = "Chronos"
         setup_data, test_data = load_and_split_dataset(backtest_config=config)
 
         forecast = mk_forecasts(test_data)
