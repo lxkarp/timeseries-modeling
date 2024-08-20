@@ -7,7 +7,7 @@ import numpy as np
 from gluonts.model.evaluation import evaluate_forecasts
 
 import os
-import yaml
+import yamlt
 from pprint import pprint as print
 
 
