@@ -1,5 +1,6 @@
 from chronos_utils import load_and_split_dataset
 from metrics import mk_viz, mk_metrics
+from chronos import ChronosPipeline
 
 import numpy as np
 
@@ -15,7 +16,7 @@ models = {
     "Naive": (SeasonalNaivePredictor, 1),
     "Prophet": (ProphetPredictor, 20),
     "ARIMA": (ARIMAPredictor, 20),
-    # "Chronos": ChronosPredictor,
+#    "Chronos": (ChronosPipeline, 20),
 }
 
 
@@ -57,7 +58,6 @@ if __name__ == "__main__":
                     season_length=config["expected_seasonality"],
                 )
             elif model_name == "Chronos":
-                from chronos import ChronosPipeline
                 pipeline = ChronosPipeline.from_pretrained(
                         "amazon/chronos-t5-small",
                         device_map="cuda:0",
