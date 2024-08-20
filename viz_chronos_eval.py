@@ -51,8 +51,12 @@ if __name__ == '__main__':
     config_file_path = os.environ.get('CHRONOS_EVAL_CONFIG')
     if config_file_path is None:
         raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
-    config = load_config(config_file_path)
-    _, test_data = load_and_split_dataset(backtest_config=config)
-    forecast = mk_forecasts(test_data)
-    mk_viz(test_data, forecast, config)
-    print(mk_metrics(test_data, forecast))
+
+    for category in ["registered", "casual"]:
+        config = load_config(config_file_path)
+        config["hf_repo"] = os.path.join(config["hf_repo"], category)
+        config["category"] = category
+        setup_data, test_data = load_and_split_dataset(backtest_config=config)
+
+        forecast = mk_forecasts(test_data)
+        mk_viz(test_data, forecast, config)
