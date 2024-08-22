@@ -1,6 +1,6 @@
 from chronos_utils import load_and_split_dataset
-from metrics import mk_viz, mk_metrics
-from chronos import ChronosPipeline
+from metrics import mk_viz
+# from chronos import ChronosPipeline
 
 import numpy as np
 
@@ -16,7 +16,7 @@ models = {
     "Naive": (SeasonalNaivePredictor, 1),
     "Prophet": (ProphetPredictor, 20),
     "ARIMA": (ARIMAPredictor, 20),
-#    "Chronos": (ChronosPipeline, 20),
+    #    "Chronos": (ChronosPipeline, 20),
 }
 
 
@@ -52,18 +52,18 @@ if __name__ == "__main__":
         setup_data, test_data = load_and_split_dataset(backtest_config=config)
         for model_name, (model_predictor, num_samples) in models.items():
             config["model_name"] = model_name
-            if model_name == "Naive":
+            if model_name == "Chronos":
+                pipeline = ChronosPipeline.from_pretrained(
+                    "amazon/chronos-t5-small",
+                    device_map="cuda:0",
+                    torch_dtype="bfloat16",
+                )
+            elif model_name == "Prophet":
+                pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
+            else:
                 pipeline = model_predictor(
                     prediction_length=np.abs(config["offset"]),
                     season_length=config["expected_seasonality"],
                 )
-            elif model_name == "Chronos":
-                pipeline = ChronosPipeline.from_pretrained(
-                        "amazon/chronos-t5-small",
-                        device_map="cuda:0",
-                        torch_dtype="bfloat16",
-                        )
-            else:
-                pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
             forecast = mk_forecasts(setup_data, pipeline, num_samples)
             mk_viz(test_data, forecast, config)
