@@ -10,7 +10,8 @@ from gluonts.model.forecast import SampleForecast
 from gluonts.model.predictor import RepresentablePredictor
 
 try:
-    from sktime.forecasting.statsforecast import StatsForecastAutoARIMA as autoARIMA
+    # from sktime.forecasting.statsforecast import StatsForecastAutoARIMA as autoARIMA
+    from sktime.forecasting.arima import AutoARIMA as autoARIMA
 except ImportError:
     autoARIMA = None
 from gluonts.ext.prophet import ProphetPredictor as ProphetPredictor
@@ -24,21 +25,14 @@ SKT_AUTOARIMA_IS_INSTALLED = autoARIMA is not None
 USAGE_MESSAGE = """
 Cannot import `sktime.forecasting.statsforecast.StatsForecastAutoARIMA`.
 
-The `ARIMAPredictor` is a thin wrapper for calling the `statsforecast.autoARIMA` package.
+The `ARIMAPredictor` is a thin wrapper for calling the `pmdarima.arima.AutoARIMA` package.
 In order to use it you need to install it using the following two
 methods:
 
     # 1) install directly
-    pip install statsforecast sktime
+    pip install pmdarima sktime
 
 """
-
-
-def feat_name(i: int) -> str:
-    """
-    The canonical name of a feature with index `i`.
-    """
-    return f"feat_dynamic_real_{i:03d}"
 
 
 class ARIMADataEntry(NamedTuple):
@@ -78,14 +72,14 @@ class ARIMADataEntry(NamedTuple):
 
 class ARIMAPredictor(RepresentablePredictor):
     """
-    Wrapper around `sktime.forecasting.statsforecast.StatsForecastAutoARIMA` to expose it to gluonts.
+    Wrapper around `sktime.forecasting.arima.AutoARIMA` to expose it to gluonts.
 
-    The `ARIMAPredictor` is a thin wrapper for calling the `statsforecast.autoARIMA` package.
+    The `ARIMAPredictor` is a thin wrapper for calling the `pmdarima.arima.AutoARIMA` package.
     In order to use it you need to install it using the following two
     methods:
 
         # 1) install directly
-        pip install statsforecast sktime
+        pip install pmdarima sktime
 
     Parameters
     ----------
@@ -108,6 +102,7 @@ class ARIMAPredictor(RepresentablePredictor):
     def __init__(
         self,
         prediction_length: int,
+        season_length: int,
         arima_params: Optional[Dict] = None,
         init_model: Callable = toolz.identity,
     ) -> None:
@@ -118,6 +113,13 @@ class ARIMAPredictor(RepresentablePredictor):
 
         if arima_params is None:
             arima_params = {}
+        arima_params.setdefault("seasonal", True)
+        arima_params.setdefault("sp", season_length)
+        arima_params.setdefault("max_order", 10)
+        arima_params.setdefault("maxiter", 500)
+        arima_params.setdefault("suppress_warnings", True)
+        # arima_params.setdefault("stepwise", False)
+        # arima_params.setdefault("n_jobs", -1)
 
         self.arima_params = arima_params
         self.init_model = init_model
@@ -130,7 +132,7 @@ class ARIMAPredictor(RepresentablePredictor):
         for entry in dataset:
             data = self._make_ARIMA_data_entry(entry)
 
-            forecast_samples = self._run_ARIMA(data, params)
+            forecast_samples = self._run_ARIMA(data, params, num_samples)
 
             yield SampleForecast(
                 samples=forecast_samples,
@@ -139,17 +141,27 @@ class ARIMAPredictor(RepresentablePredictor):
                 info=entry.get("info"),
             )
 
-    def _run_ARIMA(self, data: ARIMADataEntry, params: dict) -> np.ndarray:
+    def _run_ARIMA(self, data: ARIMADataEntry, params: dict, num_samples) -> np.ndarray:
         """
         Construct and run a :class:`ARIMA` model on the given
         :class:`ARIMADataEntry` and return the resulting array of samples.
         """
-
         forecaster = self.init_model(autoARIMA(**params))
         forecast = forecaster.fit_predict(
             y=data.arima_training_data, fh=np.arange(data.prediction_length)
         )
-        print("intermediary", forecast.T.to_numpy())
+
+        # An attempt was made to generate confidence intervals by predicting quantiles,
+        # The plotting functions within gluonts do the interval calculations for us
+        # and for some reason generating a num_samples number of quantiles doesn't
+        # play nice with the gluonts plotting functions.
+
+        # quantiles = np.linspace(0.01, 1, num_samples, endpoint=False)
+        # forecast_ci = forecaster.predict_quantiles(
+        #     fh=np.arange(data.prediction_length), alpha=quantiles
+        # )
+        # print("intermediary", forecast_ci.T.to_numpy())
+
         return forecast.T.to_numpy()
 
     def _make_ARIMA_data_entry(self, entry: DataEntry) -> ARIMADataEntry:

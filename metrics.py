@@ -209,7 +209,9 @@ def mk_viz(context, forecast, config):
         f'{config["model_name"]} {cat} {config["segment_name"]} Forecasts', fontsize=18
     )
     plt.title(
-        "metrics: EMD:{EMD}, MASE:{MASE}, WQL:{WQL}".format(**metrics), fontsize=10, y=1
+        "metrics: EMD:{EMD:.4f}, MASE:{MASE:.4f}, WQL:{WQL:.4f}".format(**metrics),
+        fontsize=10,
+        y=1,
     )
     plt.legend()
     plt.savefig(f'./{config["model_name"]}_{cat}_{config["segment_name"]}.png')
