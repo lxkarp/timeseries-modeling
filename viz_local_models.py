@@ -1,6 +1,5 @@
 from chronos_utils import load_and_split_dataset
 from metrics import mk_viz, mk_metrics
-from chronos import ChronosPipeline
 
 import numpy as np
 
@@ -57,12 +56,6 @@ if __name__ == "__main__":
                     prediction_length=np.abs(config["offset"]),
                     season_length=config["expected_seasonality"],
                 )
-            elif model_name == "Chronos":
-                pipeline = ChronosPipeline.from_pretrained(
-                        "amazon/chronos-t5-small",
-                        device_map="cuda:0",
-                        torch_dtype="bfloat16",
-                        )
             else:
                 pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
             forecast = mk_forecasts(setup_data, pipeline, num_samples)
