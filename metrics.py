@@ -187,6 +187,7 @@ def mk_viz(context, forecast, config):
 
     forecasts = forecast[0]
     cat = config["category"]
+    ratio = config['prediction_ratio']
 
     graph_data_length = len(_context.test_data.dataset[0]["target"])
 
@@ -206,7 +207,7 @@ def mk_viz(context, forecast, config):
     forecasts.plot(ax=ax, show_label=True)
     fig.autofmt_xdate()
     plt.suptitle(
-        f'{config["model_name"]} {cat} {config["segment_name"]} Forecasts', fontsize=18
+        f'{config["model_name"]} {ratio} {cat} {config["segment_name"]}', fontsize=18
     )
     plt.title(
         "metrics: EMD:{EMD:.4f}, MASE:{MASE:.4f}, WQL:{WQL:.4f}".format(**metrics),
@@ -214,4 +215,4 @@ def mk_viz(context, forecast, config):
         y=1,
     )
     plt.legend()
-    plt.savefig(f'./{config["model_name"]}_{cat}_{config["segment_name"]}.png')
+    plt.savefig(f'./{config["model_name"]}_{ratio}_{cat}_{config["segment_name"]}.png')

@@ -67,6 +67,7 @@ if __name__ == "__main__":
                  # constructs paths like:
                  # "./data/ratio_2/bike_day_q4/casual"
                 config["hf_repo"] = os.path.join(data_dir_path, f'ratio_{prediction_ratio}', f'bike_day_{segment_config}', category)
+                config["prediction_ratio"] = f'{prediction_ratio - 1}:1'
 
                 config["category"] = category
                 setup_data, test_data = load_and_split_dataset(backtest_config=config)
