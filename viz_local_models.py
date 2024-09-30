@@ -1,5 +1,6 @@
 from chronos_utils import load_and_split_dataset
 from metrics import mk_viz
+
 # from chronos import ChronosPipeline
 
 import numpy as np
@@ -48,35 +49,41 @@ def mk_forecasts(test_data, pipeline, num_samples):
 
 
 if __name__ == "__main__":
-    segment_config = os.environ.get("SEGMENT_CONFIG")
-    if segment_config is None:
-        raise ValueError("You must set the environment variable $SEGMENT_CONFIG")
     config_file_path = os.environ.get("CONFIG_FILE_PATH")
     if config_file_path is None:
-        config_file_path = (
-            "./chronos-forecasting/scripts/evaluation/configs/bike-zero-shot.yaml"
-        )
+        config_file_path = "./evaluation_configs/bike-zero-shot.yaml"
         warnings.warn("Using default $CONFIG_FILE_PATH")
 
-    for category in ["registered", "casual"]:
-        config = load_config(config_file_path, segment_config)
-        config["hf_repo"] = os.path.join(config["hf_repo"], category)
-        config["category"] = category
-        setup_data, test_data = load_and_split_dataset(backtest_config=config)
-        for model_name, (model_predictor, num_samples) in models.items():
-            config["model_name"] = model_name
-            if model_name == "Chronos":
-                pipeline = ChronosPipeline.from_pretrained(
-                    "amazon/chronos-t5-small",
-                    device_map="cuda:0",
-                    torch_dtype="bfloat16",
-                )
-            elif model_name == "Prophet":
-                pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
-            else:
-                pipeline = model_predictor(
-                    prediction_length=np.abs(config["offset"]),
-                    season_length=config["expected_seasonality"],
-                )
-            forecast = mk_forecasts(setup_data, pipeline, num_samples)
-            mk_viz(test_data, forecast, config)
+    data_dir_path = os.environ.get("DATA_DIR_PATH")
+    if data_dir_path is None:
+        data_dir_path = "./data/"
+        warnings.warn("Using default $DATA_DIR_PATH")
+
+    for prediction_ratio in [3, 4, 5, 6]:
+        for segment_config in ["week10", "july", "q4"]:
+            for category in ["registered", "casual"]:
+                config = load_config(config_file_path, segment_config)
+
+                 # constructs paths like:
+                 # "./data/ratio_2/bike_day_q4/casual"
+                config["hf_repo"] = os.path.join(data_dir_path, f'ratio_{prediction_ratio}', f'bike_day_{segment_config}', category)
+
+                config["category"] = category
+                setup_data, test_data = load_and_split_dataset(backtest_config=config)
+                for model_name, (model_predictor, num_samples) in models.items():
+                    config["model_name"] = model_name
+                    if model_name == "Chronos":
+                        pipeline = ChronosPipeline.from_pretrained(
+                            "amazon/chronos-t5-small",
+                            device_map="cuda:0",
+                            torch_dtype="bfloat16",
+                        )
+                    elif model_name == "Prophet":
+                        pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
+                    else:
+                        pipeline = model_predictor(
+                            prediction_length=np.abs(config["offset"]),
+                            season_length=config["expected_seasonality"],
+                        )
+                    forecast = mk_forecasts(setup_data, pipeline, num_samples)
+                    mk_viz(test_data, forecast, config)
