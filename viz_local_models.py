@@ -9,6 +9,7 @@ from gluonts.evaluation import make_evaluation_predictions
 
 import os
 import yaml
+import warnings
 
 # from pprint import pprint as print
 
@@ -20,11 +21,17 @@ models = {
 }
 
 
-def load_config(config_file_path: str):
+def load_config(config_file_path: str, segment_name: str):
     with open(config_file_path) as fp:
         backtest_configs = yaml.safe_load(fp)
-    # !!! you can only have a single config in your yaml
-    config = backtest_configs[0]
+    # # !!! you can only have a single config in your yaml
+    # config = backtest_configs[0]
+    # Find the config where the 'segment_name' matches the field 'segment_name'
+    config = next(
+        (cfg for cfg in backtest_configs if cfg["segment_name"] == segment_name), None
+    )
+    if config is None:
+        raise ValueError(f"No configuration found for segment name: {segment_name}")
     return config
 
 
@@ -41,12 +48,18 @@ def mk_forecasts(test_data, pipeline, num_samples):
 
 
 if __name__ == "__main__":
-    config_file_path = os.environ.get("CHRONOS_EVAL_CONFIG")
+    segment_config = os.environ.get("SEGMENT_CONFIG")
+    if segment_config is None:
+        raise ValueError("You must set the environment variable $SEGMENT_CONFIG")
+    config_file_path = os.environ.get("CONFIG_FILE_PATH")
     if config_file_path is None:
-        raise ValueError("You must set the environment variable $CHRONOS_EVAL_CONFIG")
+        config_file_path = (
+            "./chronos-forecasting/scripts/evaluation/configs/bike-zero-shot.yaml"
+        )
+        warnings.warn("Using default $CONFIG_FILE_PATH")
 
     for category in ["registered", "casual"]:
-        config = load_config(config_file_path)
+        config = load_config(config_file_path, segment_config)
         config["hf_repo"] = os.path.join(config["hf_repo"], category)
         config["category"] = category
         setup_data, test_data = load_and_split_dataset(backtest_config=config)
