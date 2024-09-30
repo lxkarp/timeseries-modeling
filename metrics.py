@@ -56,16 +56,47 @@ class EMD(BaseMetricDefinition):
     """
     Earth Mover's Distance (EMD) metric.
     """
+    q: float
 
-    forecast_type: str = "0.5"
+    @staticmethod
+    def mean(**quantile_losses: np.ndarray) -> np.ndarray:
+        stacked_quantile_losses = np.stack(
+            [quantile_loss for quantile_loss in quantile_losses.values()],
+            axis=0,
+        )
+        return np.mean(stacked_quantile_losses, axis=0)
 
     def __call__(self, axis: int) -> DirectMetric:
         return DirectMetric(
-            name=f"EMD[{self.forecast_type}]",
-            stat=partial(swd, forecast_type=self.forecast_type),
+            name=f"EMD[{self.q}]",
+            stat=partial(swd, forecast_type=self.q),
             aggregate=Mean(axis=0),
         )
 
+@dataclass
+class MeanDecileEMD(BaseMetricDefinition):
+    """
+    Mean of Earth Mover's Distance (EMD) metric across deciles.
+    """
+    quantile_levels = np.arange(0.1, 1.0, 0.1)
+
+    @staticmethod
+    def mean(**quantile_losses: np.ndarray) -> np.ndarray:
+        stacked_quantile_losses = np.stack(
+            [quantile_loss for quantile_loss in quantile_losses.values()],
+            axis=0,
+        )
+        return np.mean(stacked_quantile_losses, axis=0)
+
+    def __call__(self, axis: int) -> DirectMetric:
+        return DerivedMetric(
+            name="MeanDecileEMD",
+            metrics={
+                f"EMD[{q}]": EMD(q=q)(axis=axis)
+                for q in self.quantile_levels
+            },
+            post_process=self.mean,
+        )
 
 @dataclass
 class MASEna(BaseMetricDefinition):
@@ -162,7 +193,7 @@ def mk_metrics(context, forecast):
             metrics=[
                 MASE(),
                 MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
-                EMD(),
+                MeanDecileEMD(),
             ],
             batch_size=5000,
         )
@@ -171,7 +202,7 @@ def mk_metrics(context, forecast):
             {
                 "MASE[0.5]": "MASE",
                 "mean_weighted_sum_quantile_loss": "WQL",
-                "EMD[0.5]": "EMD",
+                "MeanDecileEMD": "EMD",
             },
             axis="columns",
         )
