@@ -17,7 +17,7 @@ import warnings
 models = {
     "Naive": (SeasonalNaivePredictor, 1),
     "Prophet": (ProphetPredictor, 20),
-    "ARIMA": (ARIMAPredictor, 20),
+    # "ARIMA": (ARIMAPredictor, 20),
     #    "Chronos": (ChronosPipeline, 20),
 }
 
@@ -59,15 +59,27 @@ if __name__ == "__main__":
         data_dir_path = "./data/"
         warnings.warn("Using default $DATA_DIR_PATH")
 
+    results_file_path = os.environ.get("RESULTS_FILE_PATH")
+    if results_file_path is None:
+        results_file_path = "./out/result_metrics.csv"
+        warnings.warn("Using and resetting default $RESULTS_FILE_PATH")
+        if os.path.exists(results_file_path):
+            os.remove(results_file_path)
+
     for prediction_ratio in [3, 4, 5, 6]:
         for segment_config in ["week10", "july", "q4"]:
             for category in ["registered", "casual"]:
                 config = load_config(config_file_path, segment_config)
 
-                 # constructs paths like:
-                 # "./data/ratio_2/bike_day_q4/casual"
-                config["hf_repo"] = os.path.join(data_dir_path, f'ratio_{prediction_ratio}', f'bike_day_{segment_config}', category)
-                config["prediction_ratio"] = f'{prediction_ratio - 1}:1'
+                # constructs paths like:
+                # "./data/ratio_2/bike_day_q4/casual"
+                config["hf_repo"] = os.path.join(
+                    data_dir_path,
+                    f"ratio_{prediction_ratio}",
+                    f"bike_day_{segment_config}",
+                    category,
+                )
+                config["prediction_ratio"] = f"{prediction_ratio - 1}:1"
 
                 config["category"] = category
                 setup_data, test_data = load_and_split_dataset(backtest_config=config)
@@ -80,7 +92,9 @@ if __name__ == "__main__":
                             torch_dtype="bfloat16",
                         )
                     elif model_name == "Prophet":
-                        pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
+                        pipeline = model_predictor(
+                            prediction_length=np.abs(config["offset"])
+                        )
                     else:
                         pipeline = model_predictor(
                             prediction_length=np.abs(config["offset"]),
