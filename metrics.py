@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
 
 from typing import (
     Collection,
@@ -56,6 +57,7 @@ class EMD(BaseMetricDefinition):
     """
     Earth Mover's Distance (EMD) metric.
     """
+
     q: float
 
     @staticmethod
@@ -73,11 +75,13 @@ class EMD(BaseMetricDefinition):
             aggregate=Mean(axis=0),
         )
 
+
 @dataclass
 class MeanDecileEMD(BaseMetricDefinition):
     """
     Mean of Earth Mover's Distance (EMD) metric across deciles.
     """
+
     quantile_levels = np.arange(0.1, 1.0, 0.1)
 
     @staticmethod
@@ -91,12 +95,10 @@ class MeanDecileEMD(BaseMetricDefinition):
     def __call__(self, axis: int) -> DirectMetric:
         return DerivedMetric(
             name="MeanDecileEMD",
-            metrics={
-                f"EMD[{q}]": EMD(q=q)(axis=axis)
-                for q in self.quantile_levels
-            },
+            metrics={f"EMD[{q}]": EMD(q=q)(axis=axis) for q in self.quantile_levels},
             post_process=self.mean,
         )
+
 
 @dataclass
 class MASEna(BaseMetricDefinition):
@@ -212,13 +214,41 @@ def mk_metrics(context, forecast):
     return metrics[0]  # !!OJO!! Magic numbers to remove the list
 
 
+def save_metrics_to_csv(metrics, config):
+    df = pd.DataFrame(
+        [
+            {
+                "ratio": config["prediction_ratio"],
+                "category": config["category"],
+                "segment_name": config["segment_name"],
+                "EMD": metrics["EMD"],
+                "MASE": metrics["MASE"],
+                "WQL": metrics["WQL"],
+            }
+        ]
+    )
+
+    output_path = "./out/result_metrics.csv"
+
+    try:
+        if not os.path.exists("./out"):
+            os.makedirs("./out")
+
+        if os.path.exists(output_path):
+            df.to_csv(output_path, mode="a", header=False, index=False)
+        else:
+            df.to_csv(output_path, mode="w", header=True, index=False)
+    except Exception as e:
+        print(f"Error saving metrics to CSV: {e}")
+
+
 def mk_viz(context, forecast, config):
     metrics = mk_metrics(context, forecast)
     _context = context.label
 
     forecasts = forecast[0]
     cat = config["category"]
-    ratio = config['prediction_ratio']
+    ratio = config["prediction_ratio"]
 
     graph_data_length = len(_context.test_data.dataset[0]["target"])
 
@@ -245,5 +275,6 @@ def mk_viz(context, forecast, config):
         fontsize=10,
         y=1,
     )
+    save_metrics_to_csv(metrics, config)
     plt.legend()
     plt.savefig(f'./{config["model_name"]}_{ratio}_{cat}_{config["segment_name"]}.png')
