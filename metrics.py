@@ -218,6 +218,7 @@ def save_metrics_to_csv(metrics, config):
     df = pd.DataFrame(
         [
             {
+                "model_name": config["model_name"],
                 "ratio": config["prediction_ratio"],
                 "category": config["category"],
                 "segment_name": config["segment_name"],
