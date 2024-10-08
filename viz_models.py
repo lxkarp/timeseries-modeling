@@ -5,7 +5,7 @@ import numpy as np
 from typing import Dict, Tuple, Type, Optional
 
 from chronos_utils import load_and_split_dataset
-from metrics import mk_viz
+from metrics import mk_viz, save_metrics_to_csv
 from gluonts.evaluation import make_evaluation_predictions
 from predictors import ARIMAPredictor, ProphetPredictor, SeasonalNaivePredictor
 
@@ -13,11 +13,17 @@ from predictors import ARIMAPredictor, ProphetPredictor, SeasonalNaivePredictor
 CONFIG_FILE_PATH = os.environ.get("CONFIG_FILE_PATH", "./evaluation_configs/bike-zero-shot.yaml")
 DATA_DIR_PATH = os.environ.get("DATA_DIR_PATH", "./data/")
 USE_CHRONOS = os.environ.get("USE_CHRONOS", "false").lower() == "true"
+RESULTS_FILE_PATH = os.environ.get("RESULTS_FILE_PATH", "./out/results_metrics.csv")
+
 
 if CONFIG_FILE_PATH == "./evaluation_configs/bike-zero-shot.yaml":
     warnings.warn("Using default $CONFIG_FILE_PATH")
 if DATA_DIR_PATH == "./data/":
     warnings.warn("Using default $DATA_DIR_PATH")
+if RESULTS_FILE_PATH == "./out/results_metrics.csv":
+    warnings.warn("Using and resetting default $RESULTS_FILE_PATH")
+    if os.path.exists(RESULTS_FILE_PATH):
+        os.remove(RESULTS_FILE_PATH)
 
 # Model configurations
 MODELS: Dict[str, Tuple[Type, int]] = {
@@ -88,7 +94,8 @@ def run_forecasting(config: dict, model_name: str, model_predictor: Type, num_sa
         )
 
     forecast = mk_forecasts(setup_data, pipeline, num_samples, config)
-    mk_viz(test_data, forecast, config)
+    metrics = mk_viz(test_data, forecast, config)
+    save_metrics_to_csv(metrics, config, RESULTS_FILE_PATH)
 
 def main():
     for prediction_ratio in [3, 4, 5, 6]:
