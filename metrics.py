@@ -214,7 +214,7 @@ def mk_metrics(context, forecast):
     return metrics[0]  # !!OJO!! Magic numbers to remove the list
 
 
-def save_metrics_to_csv(metrics, config):
+def save_metrics_to_csv(metrics, config, output_path):
     df = pd.DataFrame(
         [
             {
@@ -228,8 +228,6 @@ def save_metrics_to_csv(metrics, config):
             }
         ]
     )
-
-    output_path = "./out/result_metrics.csv"
 
     try:
         if not os.path.exists("./out"):
@@ -276,6 +274,7 @@ def mk_viz(context, forecast, config):
         fontsize=10,
         y=1,
     )
-    save_metrics_to_csv(metrics, config)
+    
     plt.legend()
     plt.savefig(f'./{config["model_name"]}_{ratio}_{cat}_{config["segment_name"]}.png')
+    return metrics
