@@ -28,8 +28,8 @@ if RESULTS_FILE_PATH == "./out/results_metrics.csv":
 # Model configurations
 MODELS: Dict[str, Tuple[Type, int]] = {
     "Naive": (SeasonalNaivePredictor, 1),
-    "Prophet": (ProphetPredictor, 20),
-    "ARIMA": (ARIMAPredictor, 20),
+#    "Prophet": (ProphetPredictor, 20),
+#    "ARIMA": (ARIMAPredictor, 20),
 }
 
 # Chronos-specific configurations
@@ -59,7 +59,7 @@ def load_config(config_file_path: str, segment_name: str) -> dict:
 def mk_forecasts(data, pipeline, num_samples: int, config: dict):
     if USE_CHRONOS and isinstance(pipeline, ChronosPipeline):
         return generate_sample_forecasts(
-            data.input,
+            data,
             pipeline=pipeline,
             prediction_length=config["prediction_length"],
             batch_size=CHRONOS_CONFIG["batch_size"],
