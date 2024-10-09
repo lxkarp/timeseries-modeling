@@ -113,7 +113,10 @@ class ARIMAPredictor(RepresentablePredictor):
 
         if arima_params is None:
             arima_params = {}
-        arima_params.setdefault("seasonal", True)
+        # OJO - "seasonal" should not be set to false to give good results
+        # this is a workaround for the error
+        # `ValueError: shapes (4,2) and (1,) not aligned: 2 (dim 1) != 1 (dim 0)`
+        arima_params.setdefault("seasonal", False)
         arima_params.setdefault("sp", season_length)
         arima_params.setdefault("max_order", 10)
         arima_params.setdefault("maxiter", 500)
