@@ -28,8 +28,8 @@ if RESULTS_FILE_PATH == "./out/results_metrics.csv":
 # Model configurations
 MODELS: Dict[str, Tuple[Type, int]] = {
     "Naive": (SeasonalNaivePredictor, 1),
-#    "Prophet": (ProphetPredictor, 20),
-#    "ARIMA": (ARIMAPredictor, 20),
+    "Prophet": (ProphetPredictor, 20),
+    "ARIMA": (ARIMAPredictor, 20),
 }
 
 # Chronos-specific configurations
