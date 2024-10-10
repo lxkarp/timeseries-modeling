@@ -46,12 +46,12 @@ def create_multiindex(df):
 
     return (
         df.pivot(columns=["segment_name", "category"], index=["model_name"])
-        .stack(level=0)
+        .stack(level=0, future_stack=True)
         .reindex(columns=micolumns)
     )
 
 
-def dataframe_to_latex(df):
+def dataframe_to_latex(df, ratio):
     """
     Convert a multi-index DataFrame to a LaTeX tabular format string.
 
@@ -61,13 +61,31 @@ def dataframe_to_latex(df):
     Returns:
     str: The LaTeX tabular format string.
     """
-    return df.to_latex(multicolumn=True, multirow=True)
+    ret_latex =  df.to_latex(multicolumn=True, multirow=True, float_format="%.4f", caption=f"Metrics for ratio {ratio}")
+    for col in df.columns:
+        min_emd_val = df.xs('EMD', level=1)[col].min()
+        min_wql_val = df.xs('WQL', level=1)[col].min()
+        min_mase_val = df.xs('MASE', level=1)[col].min()
+
+        lines = ret_latex.split('\n')
+        for i, line in enumerate(lines):
+            if 'EMD' in line and f"{min_emd_val:.4f}" in line:
+                # bold the lowest EMD value in each column
+                lines[i] = line.replace(f"{min_emd_val:.4f}", f"\\textbf{{{min_emd_val:.4f}}}")
+            if 'WQL' in line and f"{min_wql_val:.4f}" in line:
+                # italisize the lowest WQL value in each column
+                lines[i] = line.replace(f"{min_wql_val:.4f}", f"\\textit{{\\textbf{{{min_wql_val:.4f}}}}}")
+            if 'MASE' in line and f"{min_mase_val:.4f}" in line:
+                # underline the lowest MASE value in each column
+                lines[i] = line.replace(f"{min_mase_val:.4f}", f"\\underline{{\\textbf{{{min_mase_val:.4f}}}}}")
+        ret_latex = '\n' + '\n'.join(lines)
+
+    return ret_latex
 
 
 # Usage
-df = load_csv_as_dataframe("./out/result_metrics.csv")
+df = load_csv_as_dataframe("./out/results_metrics.csv")
 print(df.head())
 df_groups = group_by_ratio(df)
-for _, group in df_groups.items():
-    print(dataframe_to_latex(create_multiindex(group)))
-    print("-------------------")
+for rat, group in df_groups.items():
+    print(dataframe_to_latex(create_multiindex(group), rat))
