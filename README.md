@@ -1,20 +1,27 @@
 # timeseries-modeling
 
-## Running tests
+# Set up environment
 
 ```console
-$ python -m unittest discover tests/
-F
-======================================================================
-FAIL: test_add (test_main.MainTest.test_add)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/Users/lx/Development/timeseries-modeling/tests/test_main.py", line 16, in test_add
-    self.assertEqual(result, expected_sum)
-AssertionError: 0 != 3
+timeseries-modeling/ $ python3 -m venv venv
+timeseries-modeling/ (venv) $ . venv/bin/activate[.zsh|.fish]
+timeseries-modeling/ (venv) $ pip install requirements.local.txt
 
-----------------------------------------------------------------------
-Ran 1 test in 0.001s
+# or, if you have a GPU
+# pip install requirements.cuda.txt
+```
 
-FAILED (failures=1)
+# Evaluate local-only models
+
+timeseries-modeling/ (venv) $ python evaluate
+
+# Evaluate Chronos
+
+# Notes for Developers
+
+## Prepare evaluation data from source dataset
+
+```console
+timeseries-modeling/ $ cd data
+timeseries-modeling/data/ $ pythpn reshape_data.py
 ```
