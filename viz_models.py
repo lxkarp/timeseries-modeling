@@ -13,6 +13,7 @@ from predictors import ARIMAPredictor, ProphetPredictor, SeasonalNaivePredictor
 CONFIG_FILE_PATH = os.environ.get("CONFIG_FILE_PATH", "./evaluation_configs/bike-zero-shot.yaml")
 DATA_DIR_PATH = os.environ.get("DATA_DIR_PATH", "./data/")
 USE_CHRONOS = os.environ.get("USE_CHRONOS", "false").lower() == "true"
+USE_CHRONOS = True
 RESULTS_FILE_PATH = os.environ.get("RESULTS_FILE_PATH", "./out/results_metrics.csv")
 
 
@@ -94,7 +95,7 @@ def run_forecasting(config: dict, model_name: str, model_predictor: Type, num_sa
         )
 
     if USE_CHRONOS and model_name == "Chronos":
-        forecast = mk_forecasts(test_data, pipeline, num_samples, config)
+        forecast = mk_forecasts(test_data.input, pipeline, num_samples, config)
     else:
         forecast = mk_forecasts(setup_data, pipeline, num_samples, config)
     metrics = mk_viz(test_data, forecast, config)
