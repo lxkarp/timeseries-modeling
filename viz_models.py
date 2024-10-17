@@ -93,7 +93,10 @@ def run_forecasting(config: dict, model_name: str, model_predictor: Type, num_sa
             season_length=config["expected_seasonality"],
         )
 
-    forecast = mk_forecasts(setup_data, pipeline, num_samples, config)
+    if USE_CHRONOS and model_name == "Chronos":
+        forecast = mk_forecasts(test_data, pipeline, num_samples, config)
+    else:
+        forecast = mk_forecasts(setup_data, pipeline, num_samples, config)
     metrics = mk_viz(test_data, forecast, config)
     save_metrics_to_csv(metrics, config, RESULTS_FILE_PATH)
 
