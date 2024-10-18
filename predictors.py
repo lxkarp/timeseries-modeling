@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterator, List, NamedTuple, Optional
+from typing import Callable, Dict, Iterator, NamedTuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -113,16 +113,11 @@ class ARIMAPredictor(RepresentablePredictor):
 
         if arima_params is None:
             arima_params = {}
-        # OJO - "seasonal" should not be set to false to give good results
-        # this is a workaround for the error
-        # `ValueError: shapes (4,2) and (1,) not aligned: 2 (dim 1) != 1 (dim 0)`
         arima_params.setdefault("seasonal", True)
         arima_params.setdefault("sp", season_length)
         arima_params.setdefault("max_order", 10)
         arima_params.setdefault("maxiter", 500)
         arima_params.setdefault("suppress_warnings", True)
-        # arima_params.setdefault("stepwise", False)
-        # arima_params.setdefault("n_jobs", -1)
 
         self.arima_params = arima_params
         self.init_model = init_model
@@ -158,22 +153,18 @@ class ARIMAPredictor(RepresentablePredictor):
         :class:`ARIMADataEntry` and return the resulting array of samples.
         """
         forecaster = self.init_model(autoARIMA(**params))
-        forecast = forecaster.fit_predict(
+        forecaster.fit_predict(
             y=data.arima_training_data, fh=np.arange(data.prediction_length)
         )
 
-        # An attempt was made to generate confidence intervals by predicting quantiles,
-        # The plotting functions within gluonts do the interval calculations for us
-        # and for some reason generating a num_samples number of quantiles doesn't
-        # play nice with the gluonts plotting functions.
+        # An attempt was made to generate confidence intervals by predicting quantiles
 
-        # quantiles = np.linspace(0.01, 1, num_samples, endpoint=False)
-        # forecast_ci = forecaster.predict_quantiles(
-        #     fh=np.arange(data.prediction_length), alpha=quantiles
-        # )
-        # print("intermediary", forecast_ci.T.to_numpy())
+        quantiles = np.linspace(0.01, 1, num_samples, endpoint=False)
+        forecast_ci = forecaster.predict_quantiles(
+            fh=np.arange(data.prediction_length), alpha=quantiles
+        )
 
-        return forecast.T.to_numpy()
+        return forecast_ci.T.to_numpy(dtype=np.float64)
 
     def _make_ARIMA_data_entry(self, entry: DataEntry) -> ARIMADataEntry:
         """
