@@ -108,7 +108,7 @@ def main():
                 config["hf_repo"] = os.path.join(DATA_DIR_PATH, f'ratio_{prediction_ratio}', f'bike_day_{segment_config}', category)
                 config["prediction_ratio"] = f'{prediction_ratio - 1}:1'
                 config["category"] = category
-
+                print(f"Running {segment_config} - {category} - {prediction_ratio}")
                 for model_name, (model_predictor, num_samples) in MODELS.items():
                     config["model_name"] = model_name
                     run_forecasting(config, model_name, model_predictor, num_samples)
