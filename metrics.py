@@ -82,7 +82,7 @@ class MeanDecileEMD(BaseMetricDefinition):
     Mean of Earth Mover's Distance (EMD) metric across deciles.
     """
 
-    quantile_levels = np.arange(0.1, 1.0, 0.1)
+    quantile_levels: Collection[float]
 
     @staticmethod
     def mean(**quantile_losses: np.ndarray) -> np.ndarray:
@@ -195,7 +195,7 @@ def mk_metrics(context, forecast):
             metrics=[
                 MASE(),
                 MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
-                MeanDecileEMD(),
+                MeanDecileEMD(np.arange(0.1, 1.0, 0.1)),
             ],
             batch_size=5000,
         )
@@ -274,7 +274,7 @@ def mk_viz(context, forecast, config):
         fontsize=10,
         y=1,
     )
-    
+
     plt.legend()
     plt.savefig(f'./{config["model_name"]}_{ratio}_{cat}_{config["segment_name"]}.png')
     return metrics
