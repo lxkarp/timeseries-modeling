@@ -101,14 +101,15 @@ def run_forecasting(config: dict, model_name: str, model_predictor: Type, num_sa
     save_metrics_to_csv(metrics, config, RESULTS_FILE_PATH)
 
 def main():
-    for prediction_ratio in [3, 4, 5, 6]:
+    for data_length_multiplier in [3, 4, 5, 6]:
         for segment_config in ["week10", "july", "q4"]:
             for category in ["registered", "casual"]:
                 config = load_config(CONFIG_FILE_PATH, segment_config)
-                config["hf_repo"] = os.path.join(DATA_DIR_PATH, f'ratio_{prediction_ratio}', f'bike_day_{segment_config}', category)
-                config["prediction_ratio"] = f'{prediction_ratio - 1}:1'
+                config["hf_repo"] = os.path.join(DATA_DIR_PATH, f'ratio_{data_length_multiplier}', f'bike_day_{segment_config}', category)
+                config["prediction_ratio"] = f'{data_length_multiplier - 1}:1'
                 config["category"] = category
-                print(f"Running {segment_config} - {category} - {prediction_ratio}")
+                print(f"Running {segment_config} - {category} - {config['prediction_ratio']}")
+
                 for model_name, (model_predictor, num_samples) in MODELS.items():
                     config["model_name"] = model_name
                     run_forecasting(config, model_name, model_predictor, num_samples)
