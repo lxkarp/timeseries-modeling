@@ -141,6 +141,7 @@ class ARIMAPredictor(RepresentablePredictor):
                 # this is a workaround for the error
                 # `ValueError: shapes (4,2) and (1,) not aligned: 2 (dim 1) != 1 (dim 0)`
                 # when running against 2:1 ratio on week10
+                print("WARN: ARIMA failed, retrying with seasonal=False")
                 params["seasonal"] = False
                 forecast_samples = self._run_ARIMA(data, params, num_samples)
 
