@@ -116,7 +116,7 @@ class ARIMAPredictor(RepresentablePredictor):
         # OJO - "seasonal" should not be set to false to give good results
         # this is a workaround for the error
         # `ValueError: shapes (4,2) and (1,) not aligned: 2 (dim 1) != 1 (dim 0)`
-        arima_params.setdefault("seasonal", False)
+        arima_params.setdefault("seasonal", True)
         arima_params.setdefault("sp", season_length)
         arima_params.setdefault("max_order", 10)
         arima_params.setdefault("maxiter", 500)
@@ -134,8 +134,15 @@ class ARIMAPredictor(RepresentablePredictor):
 
         for entry in dataset:
             data = self._make_ARIMA_data_entry(entry)
-
-            forecast_samples = self._run_ARIMA(data, params, num_samples)
+            try:
+                forecast_samples = self._run_ARIMA(data, params, num_samples)
+            except ValueError as _:
+                # OJO - "seasonal" should not be set to false to give good results
+                # this is a workaround for the error
+                # `ValueError: shapes (4,2) and (1,) not aligned: 2 (dim 1) != 1 (dim 0)`
+                # when running against 2:1 ratio on week10
+                params["seasonal"] = False
+                forecast_samples = self._run_ARIMA(data, params, num_samples)
 
             yield SampleForecast(
                 samples=forecast_samples,
