@@ -13,7 +13,6 @@ from predictors import ARIMAPredictor, ProphetPredictor, SeasonalNaivePredictor
 CONFIG_FILE_PATH = os.environ.get("CONFIG_FILE_PATH", "./evaluation_configs/bike-zero-shot.yaml")
 DATA_DIR_PATH = os.environ.get("DATA_DIR_PATH", "./data/")
 USE_CHRONOS = os.environ.get("USE_CHRONOS", "false").lower() == "true"
-USE_CHRONOS = True
 RESULTS_FILE_PATH = os.environ.get("RESULTS_FILE_PATH", "./out/results_metrics.csv")
 
 
