@@ -40,7 +40,7 @@ for metric in ["WQL", "MASE", "EMD"]:
         y="model_name",
         hue="ratio",
         col="segment_name",
-        sharex="col",
+        sharex=True,
         row="category",
         col_order=["week10", "july", "q4"],
         aspect=2,
