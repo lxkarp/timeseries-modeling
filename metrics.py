@@ -46,8 +46,8 @@ def swd(data, forecast_type: str) -> np.ndarray:
     return_wd: List[np.float64] = []
 
     for i in range(len(data["label"])):
-        norm_pred = data["label"][i]._get_data() / data["seasonal_error"][i]
-        norm_actuals = data[forecast_type][i] / data["seasonal_error"][i]
+        norm_actuals = data["label"][i]._get_data() / data["seasonal_error"][i]
+        norm_pred = data[forecast_type][i] / data["seasonal_error"][i]
         return_wd.append(wasserstein_distance(norm_pred, norm_actuals))
     return np.array(return_wd)
 

@@ -7,7 +7,12 @@ from typing import Dict, Tuple, Type
 from chronos_utils import load_and_split_dataset
 from metrics import mk_viz, save_metrics_to_csv
 from gluonts.evaluation import make_evaluation_predictions
-from predictors import ARIMAPredictor, ProphetPredictor, SeasonalNaivePredictor
+from predictors import (
+    ARIMAPredictor,
+    ProphetPredictor,
+    SeasonalNaivePredictor,
+    SeasonalWindowAveragePredictor,
+)
 
 # Configuration
 CONFIG_FILE_PATH = os.environ.get(
@@ -32,6 +37,7 @@ MODELS: Dict[str, Tuple[Type, int]] = {
     "Naive": (SeasonalNaivePredictor, 1),
     "Prophet": (ProphetPredictor, 20),
     "ARIMA": (ARIMAPredictor, 20),
+    "HistoricalMean": (SeasonalWindowAveragePredictor, 20),
 }
 
 # Chronos-specific configurations
@@ -103,6 +109,7 @@ def run_forecasting(
         pipeline = model_predictor(
             prediction_length=np.abs(config["offset"]),
             season_length=config["expected_seasonality"],
+            quantile_levels=np.linspace(0.1, 0.9, 9),
         )
 
     if USE_CHRONOS and model_name == "Chronos":
