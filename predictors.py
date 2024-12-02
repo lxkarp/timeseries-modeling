@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterator, NamedTuple, Optional
+from typing import Callable, Dict, Iterator, NamedTuple, Optional, Type, List
 
 import numpy as np
 import pandas as pd
@@ -6,7 +6,8 @@ import toolz
 
 from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry, Dataset
-from gluonts.model.forecast import SampleForecast
+from gluonts.dataset.util import forecast_start
+from gluonts.model.forecast import SampleForecast, QuantileForecast
 from gluonts.model.predictor import RepresentablePredictor
 
 try:
@@ -21,6 +22,14 @@ from gluonts.model.seasonal_naive import (
 from gluonts.ext.statsforecast import (
     SeasonalWindowAveragePredictor as SeasonalWindowAveragePredictor,
     AutoARIMAPredictor as ARIMAPredictor,
+    ModelConfig,
+)
+
+from statsforecast.models import (
+    AutoARIMA,
+    AutoETS,
+    AutoCES,
+    DynamicOptimizedTheta,
 )
 
 # SKT_AUTOARIMA_IS_INSTALLED = autoARIMA is not None
@@ -186,3 +195,101 @@ from gluonts.ext.statsforecast import (
 #             start=start,
 #             target=target,
 #         )
+
+
+class SCUMForecastPredictor(RepresentablePredictor):
+    """
+    A predictor type that wraps models from the `statsforecast`_ package.
+
+    Parameters
+    ----------
+    prediction_length
+        Prediction length for the model to use.
+    quantile_levels
+        Optional list of quantile levels that we want predictions for.
+        Note: this is only supported by specific types of models, such as
+        ``AutoARIMA``. By default this is ``None``, giving only the mean
+        prediction.
+    *_model_params: Dict
+        Keyword arguments to be passed to the model type for construction.
+        The specific arguments accepted or required depend on the
+        ``ModelType``; please refer to the documentation of ``statsforecast``
+        for details.
+    """
+
+    @validated()
+    def __init__(
+        self,
+        prediction_length: int,
+        quantile_levels: Optional[List[float]] = None,
+        arima_model_params: Optional[Dict] = None,
+        ets_model_params: Optional[Dict] = None,
+        ces_model_params: Optional[Dict] = None,
+        dot_model_params: Optional[Dict] = None,
+    ) -> None:
+        super().__init__(prediction_length=prediction_length)
+        self.arima_model = AutoARIMA(arima_model_params)
+        self.ets_model = AutoETS(ets_model_params)
+        self.dot_model = DynamicOptimizedTheta(dot_model_params)
+        self.ces_model = AutoCES(ces_model_params)
+        self.config = ModelConfig(quantile_levels=quantile_levels)
+
+    def predict_item(self, entry: DataEntry) -> QuantileForecast:
+        # TODO use also exogenous features
+        kwargs = {}
+        if self.config.intervals is not None:
+            kwargs["level"] = self.config.intervals
+
+        arima_prediction = self.arima_model.forecast(
+            y=entry["target"],
+            h=self.prediction_length,
+            **kwargs,
+        )
+        ets_prediction = self.ets_model.forecast(
+            y=entry["target"],
+            h=self.prediction_length,
+            **kwargs,
+        )
+        ces_prediction = self.ces_model.forecast(
+            y=entry["target"],
+            h=self.prediction_length,
+            **kwargs,
+        )
+        dot_prediction = self.dot_model.forecast(
+            y=entry["target"],
+            h=self.prediction_length,
+            **kwargs,
+        )
+
+        # Should be the same keys for all models, but to be safe we take the intersection.
+        # *_prediction["mean"] will be present in all models, but the level_* keys might differ.
+        shared_keys = (
+            set(arima_prediction.keys())
+            & set(ets_prediction.keys())
+            & set(ces_prediction.keys())
+            & set(dot_prediction.keys())
+        )
+        prediction = {
+            key: np.median(
+                np.array(
+                    [
+                        arima_prediction[key],
+                        ets_prediction[key],
+                        ces_prediction[key],
+                        dot_prediction[key],
+                    ]
+                ),
+                axis=0,
+            )
+            for key in shared_keys
+        }
+
+        forecast_arrays = [prediction[k] for k in self.config.statsforecast_keys]
+
+        return QuantileForecast(
+            forecast_arrays=np.stack(forecast_arrays, axis=0),
+            forecast_keys=self.config.forecast_keys,
+            start_date=forecast_start(entry),
+            item_id=entry.get("item_id"),
+            info=entry.get("info"),
+        )
