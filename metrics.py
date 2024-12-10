@@ -5,6 +5,8 @@ from gluonts.ev.metrics import (
     WeightedSumQuantileLoss,
     MASE,
     MeanWeightedSumQuantileLoss,
+    NRMSE,
+    SMAPE,
 )
 
 from gluonts.ev.aggregations import Aggregation
@@ -196,6 +198,9 @@ def mk_metrics(context, forecast):
                 MASE(),
                 MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
                 MeanDecileEMD(np.arange(0.1, 1.0, 0.1)),
+                EMD(0.5),
+                NRMSE(),
+                SMAPE(),
             ],
             batch_size=5000,
         )
@@ -204,12 +209,16 @@ def mk_metrics(context, forecast):
             {
                 "MASE[0.5]": "MASE",
                 "mean_weighted_sum_quantile_loss": "WQL",
-                "MeanDecileEMD": "EMD",
+                "MeanDecileEMD": "mdEMD",
+                "EMD[0.5]": "EMD",
+                # "NRMSE[mean]": "NRMSE",
+                # "sMAPE[0.5]": "SMAPE",
             },
             axis="columns",
         )
         .to_dict(orient="records")
     )
+    print(metrics)
 
     return metrics[0]  # !!OJO!! Magic numbers to remove the list
 
@@ -222,9 +231,12 @@ def save_metrics_to_csv(metrics, config, output_path):
                 "ratio": config["prediction_ratio"],
                 "category": config["category"],
                 "segment_name": config["segment_name"],
-                "EMD": metrics["EMD"],
+                "mdEMD": metrics["mdEMD"],
                 "MASE": metrics["MASE"],
                 "WQL": metrics["WQL"],
+                "EMD": metrics["EMD"],
+                # "NRMSE": metrics["NRMSE"],
+                # "SMAPE": metrics["SMAPE"],
             }
         ]
     )

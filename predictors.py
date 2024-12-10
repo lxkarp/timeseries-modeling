@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterator, NamedTuple, Optional
+from typing import Callable, Dict, Iterator, NamedTuple, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -6,180 +6,223 @@ import toolz
 
 from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry, Dataset
+from gluonts.dataset.field_names import FieldName
+from gluonts.model.forecast import Forecast
+from gluonts.model.predictor import Predictor
 from gluonts.model.forecast import SampleForecast
 from gluonts.model.predictor import RepresentablePredictor
+from gluonts.dataset.util import period_index
+from gluonts.dataset.split import split
+from gluonts.dataset.util import forecast_start
 
-try:
-    # from sktime.forecasting.statsforecast import StatsForecastAutoARIMA as autoARIMA
-    from sktime.forecasting.arima import AutoARIMA as autoARIMA
-except ImportError:
-    autoARIMA = None
-from gluonts.ext.prophet import ProphetPredictor as ProphetPredictor
 from gluonts.model.seasonal_naive import (
     SeasonalNaivePredictor as SeasonalNaivePredictor,
 )
+from gluonts.ext.statsforecast import AutoARIMAPredictor
+from gluonts.model.trivial.constant import ConstantValuePredictor
+from scipy.stats import skewnorm
 
 
-SKT_AUTOARIMA_IS_INSTALLED = autoARIMA is not None
-
-USAGE_MESSAGE = """
-Cannot import `sktime.forecasting.statsforecast.StatsForecastAutoARIMA`.
-
-The `ARIMAPredictor` is a thin wrapper for calling the `pmdarima.arima.AutoARIMA` package.
-In order to use it you need to install it using the following two
-methods:
-
-    # 1) install directly
-    pip install pmdarima sktime
-
-"""
-
-
-class ARIMADataEntry(NamedTuple):
+def _to_dataframe(input_label: Tuple[DataEntry, DataEntry]) -> pd.DataFrame:
     """
-    A named tuple containing relevant base and derived data that is required in
-    order to call AutoARIMA.
+    Turn a pair of consecutive (in time) data entries into a dataframe.
     """
-
-    train_length: int
-    prediction_length: int
-    start: pd.Period
-    target: np.ndarray
-
-    @property
-    def arima_training_data(self) -> pd.Series:
-        return pd.DataFrame(
-            data={
-                **{
-                    "ds": pd.period_range(
-                        start=self.start,
-                        periods=self.train_length,
-                        freq=self.start.freq,
-                    ).to_timestamp(),
-                    "y": self.target,
-                },
-            }
-        ).set_index("ds")
-
-    @property
-    def forecast_start(self) -> pd.Period:
-        return self.start + self.train_length * self.start.freq
-
-    @property
-    def freq(self):
-        return self.start.freq
+    start = input_label[0][FieldName.START]
+    targets = [entry[FieldName.TARGET] for entry in input_label]
+    full_target = np.concatenate(targets, axis=-1)
+    index = period_index({FieldName.START: start, FieldName.TARGET: full_target})
+    return pd.DataFrame(full_target.transpose(), index=index)
 
 
-class ARIMAPredictor(RepresentablePredictor):
+def make_oracle_predictions(
+    dataset: Dataset,
+    predictor: Predictor,
+    num_samples: int = 100,
+) -> Tuple[Iterator[Forecast], Iterator[pd.Series]]:
     """
-    Wrapper around `sktime.forecasting.arima.AutoARIMA` to expose it to gluonts.
-
-    The `ARIMAPredictor` is a thin wrapper for calling the `pmdarima.arima.AutoARIMA` package.
-    In order to use it you need to install it using the following two
-    methods:
-
-        # 1) install directly
-        pip install pmdarima sktime
+    !!! CAN ONLY BE USED WITH ORACLE STYLE PREDICTORS !!!
+    Oracle predictors are predictors that can access the future values of the
+    target during prediction time. This function is used to evaluate such
+    predictors by providing them with the actual future values of the target
+    during prediction time.
 
     Parameters
     ----------
-    prediction_length
-        Number of time points to predict
-    arima_params
-        Parameters to pass when instantiating the autoARIMA model.
-    init_model
-        An optional function that will be called with the configured model.
-        This can be used to configure more complex setups, e.g.
+    dataset
+        Dataset where the evaluation will happen. Only the portion excluding
+        the prediction_length portion is used when making prediction.
+    predictor
+        Model used to draw predictions.
+    num_samples
+        Number of samples to draw on the model when evaluating. Only
+        sampling-based models will use this.
 
-        >>> def configure_model(model):
-        ...     model.add_seasonality(
-        ...         name='weekly', period=7, fourier_order=3, prior_scale=0.1
-        ...     )
-        ...     return model
+    Returns
+    -------
+    Tuple[Iterator[Forecast], Iterator[pd.Series]]
+        A pair of iterators, the first one yielding the forecasts, and the
+        second one yielding the corresponding ground truth series.
     """
 
+    window_length = predictor.prediction_length + getattr(predictor, "lead_time", 0)
+    _, test_template = split(dataset, offset=-window_length)
+    test_data = test_template.generate_instances(window_length)
+
+    return (
+        predictor.predict(
+            test_data.input,
+            num_samples=num_samples,
+            ground_truth=test_data.label,
+        ),
+        map(_to_dataframe, test_data),
+    )
+
+
+class TrueOraclePredictor(RepresentablePredictor):
+    @validated()
+    def __init__(self, prediction_length: int, num_samples: int) -> None:
+        self.prediction_length = prediction_length
+        self.num_samples = num_samples
+
+    def predict(self, dataset: Dataset, **kwargs) -> Iterator[Forecast]:
+        ground_truth = kwargs.pop("ground_truth", None)
+        if ground_truth is None:
+            raise ValueError("Ground truth is required for TrueOraclePredictor")
+        for item, label in zip(dataset, ground_truth):
+            yield self.predict_item(
+                item, ground_truth=label[FieldName.TARGET], **kwargs
+            )
+
+    def predict_item(
+        self, item: DataEntry, num_samples: int, ground_truth=None
+    ) -> Forecast:
+        forecast_start_time = forecast_start(item)
+        samples = np.tile(ground_truth[-self.prediction_length :], (num_samples, 1))
+        return SampleForecast(
+            samples=samples,
+            start_date=forecast_start_time,
+            item_id=item.get("item_id", None),
+        )
+
+
+class OffsetOraclePredictor(RepresentablePredictor):
+    @validated()
+    def __init__(self, prediction_length: int, num_samples: int) -> None:
+        self.prediction_length = prediction_length
+        self.num_samples = num_samples
+
+    def predict(self, dataset: Dataset, **kwargs) -> Iterator[Forecast]:
+        ground_truth = kwargs.pop("ground_truth", None)
+        if ground_truth is None:
+            raise ValueError("Ground truth is required for OffsetOraclePredictor")
+        for item, label in zip(dataset, ground_truth):
+            yield self.predict_item(
+                item, ground_truth=label[FieldName.TARGET], **kwargs
+            )
+
+    def predict_item(
+        self, item: DataEntry, num_samples: int, ground_truth=None, offset: int = 1
+    ) -> Forecast:
+        forecast_start_time = forecast_start(item)
+        offset_ground_truth = np.roll(
+            ground_truth[-self.prediction_length :], shift=offset
+        )
+        samples = np.tile(offset_ground_truth, (num_samples, 1))
+        return SampleForecast(
+            samples=samples,
+            start_date=forecast_start_time,
+            item_id=item.get("item_id", None),
+        )
+
+
+## Constant Predictors
+class ConstantZeroPredictor(ConstantValuePredictor):
+    def __init__(self, prediction_length: int, num_samples: int = 1) -> None:
+        super().__init__(prediction_length, value=0.0, num_samples=num_samples)
+
+
+class ConstantMeanPredictor(RepresentablePredictor):
     @validated()
     def __init__(
         self,
         prediction_length: int,
-        season_length: int,
-        arima_params: Optional[Dict] = None,
-        init_model: Callable = toolz.identity,
+        num_samples: int = 1,
+        context_length: Optional[int] = None,
     ) -> None:
         super().__init__(prediction_length=prediction_length)
+        self.context_length = context_length
+        self.num_samples = num_samples
+        self.shape = (self.num_samples, self.prediction_length)
 
-        if not SKT_AUTOARIMA_IS_INSTALLED:
-            raise ImportError(USAGE_MESSAGE)
+    def predict_item(self, item: DataEntry) -> SampleForecast:
+        if self.context_length is not None:
+            target = item["target"][-self.context_length :]
+        else:
+            target = item["target"]
 
-        if arima_params is None:
-            arima_params = {}
-        arima_params.setdefault("seasonal", True)
-        arima_params.setdefault("sp", season_length)
-        arima_params.setdefault("max_order", 10)
-        arima_params.setdefault("maxiter", 500)
-        arima_params.setdefault("suppress_warnings", True)
+        mean = np.nanmean(target)
+        std = np.nanstd(target)
 
-        self.arima_params = arima_params
-        self.init_model = init_model
-
-    def predict(
-        self, dataset: Dataset, num_samples: int = 100, **kwargs
-    ) -> Iterator[SampleForecast]:
-        params = self.arima_params.copy()
-
-        for entry in dataset:
-            data = self._make_ARIMA_data_entry(entry)
-            try:
-                forecast_samples = self._run_ARIMA(data, params, num_samples)
-            except ValueError as _:
-                # OJO - "seasonal" should not be set to false to give good results
-                # this is a workaround for the error
-                # `ValueError: shapes (4,2) and (1,) not aligned: 2 (dim 1) != 1 (dim 0)`
-                # when running against 2:1 ratio on week10
-                print("WARN: ARIMA failed, retrying with seasonal=False")
-                params["seasonal"] = False
-                forecast_samples = self._run_ARIMA(data, params, num_samples)
-
-            yield SampleForecast(
-                samples=forecast_samples,
-                start_date=data.forecast_start,
-                item_id=entry.get("item_id"),
-                info=entry.get("info"),
-            )
-
-    def _run_ARIMA(self, data: ARIMADataEntry, params: dict, num_samples) -> np.ndarray:
-        """
-        Construct and run a :class:`ARIMA` model on the given
-        :class:`ARIMADataEntry` and return the resulting array of samples.
-        """
-        forecaster = self.init_model(autoARIMA(**params))
-        forecaster.fit_predict(
-            y=data.arima_training_data, fh=np.arange(data.prediction_length)
+        return SampleForecast(
+            samples=np.full(self.shape, mean),
+            start_date=forecast_start(item),
+            item_id=item.get(FieldName.ITEM_ID),
+            info={"mean": mean, "std": std},
         )
 
-        # An attempt was made to generate confidence intervals by predicting quantiles
 
-        quantiles = np.linspace(0.01, 1, num_samples, endpoint=False)
-        forecast_ci = forecaster.predict_quantiles(
-            fh=np.arange(data.prediction_length), alpha=quantiles
+class ConstantMedianPredictor(RepresentablePredictor):
+    @validated()
+    def __init__(
+        self,
+        prediction_length: int,
+        num_samples: int = 1,
+        context_length: Optional[int] = None,
+    ) -> None:
+        super().__init__(prediction_length=prediction_length)
+        self.context_length = context_length
+        self.num_samples = num_samples
+        self.shape = (self.num_samples, self.prediction_length)
+
+    def predict_item(self, item: DataEntry) -> SampleForecast:
+        if self.context_length is not None:
+            target = item["target"][-self.context_length :]
+        else:
+            target = item["target"]
+        median = np.nanmedian(target)
+        return SampleForecast(
+            samples=np.full(self.shape, median),
+            start_date=forecast_start(item),
+            item_id=item.get(FieldName.ITEM_ID),
         )
 
-        return forecast_ci.T.to_numpy(dtype=np.float64)
 
-    def _make_ARIMA_data_entry(self, entry: DataEntry) -> ARIMADataEntry:
-        """
-        Construct a :class:`ARIMADataEntry` from a regular
-        :class:`DataEntry`.
-        """
+## skewed mean predictors
+class SkewedMeanPredictor(ConstantMeanPredictor):
+    def __init__(self, prediction_length, num_samples=20, skewness=10):
+        assert num_samples > 1, "num_samples must be set greater than 1"
+        self.skewness = skewness  # positive values are right skewed, negative values are left skewed
+        super().__init__(prediction_length=prediction_length, num_samples=num_samples)
 
-        train_length = len(entry["target"])
-        prediction_length = self.prediction_length
-        start = entry["start"]
-        target = entry["target"]
+    def generate_skew(self, target):
+        mean = target.info["mean"]
+        std = target.info["std"]
+        skewed_targets = skewnorm.rvs(
+            a=self.skewness, loc=mean, scale=std, size=self.shape
+        )
+        return skewed_targets
 
-        return ARIMADataEntry(
-            train_length=train_length,
-            prediction_length=prediction_length,
-            start=start,
-            target=target,
+    def predict_item(self, item):
+        return SampleForecast(
+            samples=self.generate_skew(super().predict_item(item)),
+            start_date=forecast_start(item),
+            item_id=item.get(FieldName.ITEM_ID),
+        )
+
+
+class ARIMAPredictor(AutoARIMAPredictor):
+    def __init__(self, prediction_length: int, num_samples: int = 1) -> None:
+        quantile_levels = list(np.linspace(0.0, 1, num_samples).round(2))
+        super().__init__(
+            prediction_length=prediction_length, quantile_levels=quantile_levels
         )
