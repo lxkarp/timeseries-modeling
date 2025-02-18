@@ -37,7 +37,7 @@ if RESULTS_FILE_PATH == "./out/results_metrics.csv":
 MODELS: Dict[str, Tuple[Type, int]] = {
     # "Naive": (SeasonalNaivePredictor, 1),
     # "Prophet": (ProphetPredictor, 20),
-    "ARIMA": (ARIMAPredictor, 20),
+    # "ARIMA": (ARIMAPredictor, 20),
     # "HistoricalMean": (SeasonalWindowAveragePredictor, 20),
     "SCUM": (SCUMForecastPredictor, 20),
 }
@@ -108,6 +108,12 @@ def run_forecasting(
     elif model_name == "Prophet":
         pipeline = model_predictor(prediction_length=np.abs(config["offset"]))
     elif model_name == "ARIMA":
+        pipeline = model_predictor(
+            prediction_length=np.abs(config["offset"]),
+            season_length=config["expected_seasonality"],
+            quantile_levels=np.linspace(0.1, 0.9, 9).tolist(),
+        )
+    elif model_name == "SCUM":
         pipeline = model_predictor(
             prediction_length=np.abs(config["offset"]),
             season_length=config["expected_seasonality"],

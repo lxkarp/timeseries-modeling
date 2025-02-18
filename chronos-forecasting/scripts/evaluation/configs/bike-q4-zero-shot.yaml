@@ -1,9 +1,0 @@
-# Backtest configs for the 28 "zero-shot" datasets.
-# These datasets were not seen by Chronos models during training.
-- name: default
-  hf_repo: "/Users/lx/Development/timeseries-modeling/data/bike_day_q4"
-  offset: -91
-  prediction_length: 91
-  num_rolls: 1
-  segment_name: "q4"
-  expected_seasonality: 7

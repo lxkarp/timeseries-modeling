@@ -114,13 +114,11 @@ for ratio in [2, 3, 4, 5, 6]:
         print(len(temp_casual['timestamp'][0]))
 
 
-# In[5]:
 
 
 pprint(prediction_config)
 
 
-# In[ ]:
 
 
 

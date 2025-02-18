@@ -6,7 +6,7 @@ import toolz
 
 from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry, Dataset
-from gluonts.dataset.util import forecast_start
+from gluonts.dataset.util import forecast_start, to_pandas
 from gluonts.model.forecast import SampleForecast, QuantileForecast
 from gluonts.model.predictor import RepresentablePredictor
 
@@ -24,7 +24,7 @@ from gluonts.ext.statsforecast import (
     AutoARIMAPredictor as ARIMAPredictor,
     ModelConfig,
 )
-
+from statsforecast import StatsForecast
 from statsforecast.models import (
     AutoARIMA,
     AutoETS,
@@ -221,17 +221,16 @@ class SCUMForecastPredictor(RepresentablePredictor):
     def __init__(
         self,
         prediction_length: int,
+        season_length: int,
         quantile_levels: Optional[List[float]] = None,
-        arima_model_params: Optional[Dict] = None,
-        ets_model_params: Optional[Dict] = None,
-        ces_model_params: Optional[Dict] = None,
-        dot_model_params: Optional[Dict] = None,
     ) -> None:
         super().__init__(prediction_length=prediction_length)
-        self.arima_model = AutoARIMA(arima_model_params)
-        self.ets_model = AutoETS(ets_model_params)
-        self.dot_model = DynamicOptimizedTheta(dot_model_params)
-        self.ces_model = AutoCES(ces_model_params)
+        self.models = [
+            AutoARIMA(season_length=season_length),
+            AutoETS(season_length=season_length), 
+            DynamicOptimizedTheta(season_length=season_length), 
+            AutoCES(season_length=season_length),
+        ]
         self.config = ModelConfig(quantile_levels=quantile_levels)
 
     def predict_item(self, entry: DataEntry) -> QuantileForecast:
@@ -239,52 +238,32 @@ class SCUMForecastPredictor(RepresentablePredictor):
         kwargs = {}
         if self.config.intervals is not None:
             kwargs["level"] = self.config.intervals
-
-        arima_prediction = self.arima_model.forecast(
-            y=entry["target"],
-            h=self.prediction_length,
-            **kwargs,
-        )
-        ets_prediction = self.ets_model.forecast(
-            y=entry["target"],
-            h=self.prediction_length,
-            **kwargs,
-        )
-        ces_prediction = self.ces_model.forecast(
-            y=entry["target"],
-            h=self.prediction_length,
-            **kwargs,
-        )
-        dot_prediction = self.dot_model.forecast(
-            y=entry["target"],
+        self.sf = StatsForecast(models=self.models, n_jobs=-1, freq=entry['start'].freqstr)
+        data = to_pandas(entry).to_frame("y").rename_axis("ds").reset_index()
+        data['ds'] = data['ds'].dt.to_timestamp()
+        data['unique_id'] = 1.0 # KLUDGE
+        raw_prediction = self.sf.forecast(
+            df=data,
             h=self.prediction_length,
             **kwargs,
         )
 
-        # Should be the same keys for all models, but to be safe we take the intersection.
-        # *_prediction["mean"] will be present in all models, but the level_* keys might differ.
-        shared_keys = (
-            set(arima_prediction.keys())
-            & set(ets_prediction.keys())
-            & set(ces_prediction.keys())
-            & set(dot_prediction.keys())
-        )
-        prediction = {
-            key: np.median(
-                np.array(
-                    [
-                        arima_prediction[key],
-                        ets_prediction[key],
-                        ces_prediction[key],
-                        dot_prediction[key],
-                    ]
-                ),
-                axis=0,
-            )
-            for key in shared_keys
-        }
+        # Extract unique model prefixes and suffixes from the dataframe columns
+        columns = [col for col in raw_prediction.columns if col not in ['unique_id', 'ds']]
+        models = set(col.split('-')[0] for col in columns)
+        suffixes = set('-' + '-'.join(col.split('-')[1:]) for col in columns if '-' in col)
+        suffixes.add('')  # Add empty suffix for the base model columns
 
-        forecast_arrays = [prediction[k] for k in self.config.statsforecast_keys]
+        condensed_df = pd.DataFrame()
+
+        # Calculate the median for each suffix
+        for suffix in suffixes:
+            cols_to_median = [f'{model}{suffix}' for model in models]
+            col_name = suffix[1:] if suffix != '' else 'mean'
+            condensed_df[col_name] = raw_prediction[cols_to_median].median(axis=1)
+        condensed_df = condensed_df[self.config.statsforecast_keys]
+
+        forecast_arrays = [condensed_df[k] for k in list(condensed_df.columns)]
 
         return QuantileForecast(
             forecast_arrays=np.stack(forecast_arrays, axis=0),
