@@ -20,7 +20,7 @@ from gluonts.model.seasonal_naive import (
     SeasonalNaivePredictor as SeasonalNaivePredictor,
 )
 from gluonts.ext.statsforecast import (
-    SeasonalWindowAveragePredictor as SeasonalWindowAveragePredictor,
+    WindowAveragePredictor as WindowAveragePredictor,
     AutoARIMAPredictor as ARIMAPredictor,
     ModelConfig,
 )
