@@ -10,7 +10,8 @@ from gluonts.ev.metrics import (
 )
 
 from gluonts.ev.aggregations import Aggregation
-from scipy.stats import wasserstein_distance
+from gluonts.model.forecast import SampleForecast, QuantileForecast
+from scipy.stats import wasserstein_distance_nd
 from gluonts.ev.aggregations import Mean
 from gluonts.model.evaluation import evaluate_forecasts
 from gluonts.ev.stats import absolute_scaled_error
@@ -36,21 +37,30 @@ def wd(data, forecast_type: str) -> np.ndarray:
 
     for i in range(len(data["label"])):
         return_wd.append(
-            wasserstein_distance(data["label"][i]._get_data(), data[forecast_type][i])
+            wasserstein_distance_nd(data["label"][i]._get_data(), data[forecast_type][i])
         )
     return np.array(return_wd)
 
 
-def swd(data, forecast_type: str) -> np.ndarray:
+def swd(data, quantile_levels: Optional[Collection[float]] = None) -> np.ndarray:
     """
     scaled wasserstein distance
     """
     return_wd: List[np.float64] = []
 
+    if type(data.maps[1].forecasts[0]) == SampleForecast:
+        forecast_dim = data.maps[1].forecasts[0].num_samples
+    elif type(data.maps[1].forecasts[0]) == QuantileForecast:
+        forecast_dim = len(quantile_levels)
+
     for i in range(len(data["label"])):
-        norm_pred = data["label"][i]._get_data() / data["seasonal_error"][i]
-        norm_actuals = data[forecast_type][i] / data["seasonal_error"][i]
-        return_wd.append(wasserstein_distance(norm_pred, norm_actuals))
+        norm_actuals = data["label"][i]._get_data() / data["seasonal_error"][i]
+        if forecast_dim == 1:
+            norm_pred = data.maps[1].forecasts[0].mean / data["seasonal_error"][i]
+        else:
+            norm_pred = [data[quantile][i] for quantile in quantile_levels] / data['seasonal_error'][i]
+            norm_actuals = np.tile(norm_actuals, (len(quantile_levels), 1))
+        return_wd.append(wasserstein_distance_nd(norm_pred, norm_actuals))
     return np.array(return_wd)
 
 
@@ -59,22 +69,14 @@ class EMD(BaseMetricDefinition):
     """
     Earth Mover's Distance (EMD) metric.
     """
-
-    q: float
-
-    @staticmethod
-    def mean(**quantile_losses: np.ndarray) -> np.ndarray:
-        stacked_quantile_losses = np.stack(
-            [quantile_loss for quantile_loss in quantile_losses.values()],
-            axis=0,
-        )
-        return np.mean(stacked_quantile_losses, axis=0)
+    quantile_levels: Collection[float]
 
     def __call__(self, axis: int) -> DirectMetric:
         return DirectMetric(
-            name=f"EMD[{self.q}]",
-            stat=partial(swd, forecast_type=self.q),
-            aggregate=Mean(axis=0),
+            name=f"EMD",
+            # stat=partial(swd, forecast_type=self.q),
+            stat=partial(swd, quantile_levels=self.quantile_levels),
+            aggregate=ListAgg(axis=axis),
         )
 
 
@@ -197,8 +199,8 @@ def mk_metrics(context, forecast):
             metrics=[
                 MASE(),
                 MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
-                MeanDecileEMD(np.arange(0.1, 1.0, 0.1)),
-                EMD(0.5),
+                # MeanDecileEMD(np.arange(0.1, 1.0, 0.1)),
+                EMD(np.arange(0.1, 1.0, 0.1)),
                 NRMSE(),
                 SMAPE(),
             ],
@@ -209,8 +211,8 @@ def mk_metrics(context, forecast):
             {
                 "MASE[0.5]": "MASE",
                 "mean_weighted_sum_quantile_loss": "WQL",
-                "MeanDecileEMD": "mdEMD",
-                "EMD[0.5]": "EMD",
+                # "MeanDecileEMD": "mdEMD",
+                "EMD": "EMD",
                 # "NRMSE[mean]": "NRMSE",
                 # "sMAPE[0.5]": "SMAPE",
             },
@@ -231,7 +233,7 @@ def save_metrics_to_csv(metrics, config, output_path):
                 "ratio": config["prediction_ratio"],
                 "category": config["category"],
                 "segment_name": config["segment_name"],
-                "mdEMD": metrics["mdEMD"],
+                # "mdEMD": metrics["mdEMD"],
                 "MASE": metrics["MASE"],
                 "WQL": metrics["WQL"],
                 "EMD": metrics["EMD"],
