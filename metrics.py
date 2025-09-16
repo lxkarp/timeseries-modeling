@@ -57,12 +57,25 @@ def swd(data, quantile_levels: Optional[Collection[float]] = None) -> np.ndarray
         norm_actuals = data["label"][i]._get_data() / data["seasonal_error"][i]
         if forecast_dim == 1:
             norm_pred = data.maps[1].forecasts[0].mean / data["seasonal_error"][i]
+            norm_actuals = mk_spread(norm_actuals, num_samples=len(quantile_levels), delta=True)
+            norm_pred = mk_spread(norm_pred, num_samples=len(quantile_levels), delta=True)
+
         else:
             norm_pred = [data[quantile][i] for quantile in quantile_levels] / data['seasonal_error'][i]
-            norm_actuals = np.tile(norm_actuals, (len(quantile_levels), 1))
+            interim_actuals = np.zeros_like(norm_pred)
+            interim_actuals[len(quantile_levels) // 2] = norm_actuals
+            norm_actuals = interim_actuals
+            # norm_actuals = np.tile(norm_actuals, (len(quantile_levels), 1))
         return_wd.append(wasserstein_distance_nd(norm_pred, norm_actuals))
     return np.array(return_wd)
 
+
+def mk_spread(timeseries, num_samples: int, delta: bool = True) -> np.ndarray:
+    if not delta:
+        return np.tile(timeseries, (num_samples, 1))
+    interim = np.zeros(shape=(num_samples, len(timeseries)))
+    interim[num_samples // 2] = timeseries
+    return interim
 
 @dataclass
 class EMD(BaseMetricDefinition):
