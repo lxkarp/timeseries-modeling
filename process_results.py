@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import os
 
 
 def load_csv_as_dataframe(file_path):
@@ -83,14 +84,33 @@ def dataframe_to_latex(df, ratio):
         float_format="%.4f",
         caption=f"Metrics for ratio {ratio}",
     )
+    metric_index = df.index.get_level_values(1)
     for col in df.columns:
         min_emd_val = df.xs("EMD", level=1)[col].min()
+        min_pemd_val = (
+            df.xs("pEMD", level=1)[col].min()
+            if "pEMD" in metric_index
+            else None
+        )
         min_wql_val = df.xs("WQL", level=1)[col].min()
         min_mase_val = df.xs("MASE", level=1)[col].min()
 
         lines = ret_latex.split("\n")
         for i, line in enumerate(lines):
-            if "EMD" in line and f"{min_emd_val:.4f}" in line:
+            if (
+                "pEMD" in line
+                and min_pemd_val is not None
+                and f"{min_pemd_val:.4f}" in line
+            ):
+                # bold the lowest pEMD value in each column
+                lines[i] = line.replace(
+                    f"{min_pemd_val:.4f}", f"\\textbf{{{min_pemd_val:.4f}}}"
+                )
+            if (
+                "EMD" in line
+                and "pEMD" not in line
+                and f"{min_emd_val:.4f}" in line
+            ):
                 # bold the lowest EMD value in each column
                 lines[i] = line.replace(
                     f"{min_emd_val:.4f}", f"\\textbf{{{min_emd_val:.4f}}}"
@@ -118,7 +138,9 @@ def dataframe_to_latex(df, ratio):
 
 
 # Usage
-df = load_csv_as_dataframe("./out/results_metrics.csv")
+df = load_csv_as_dataframe(
+    os.environ.get("RESULTS_FILE_PATH", "./out/results_metrics.csv")
+)
 print(df.head())
 df_groups = group_by_ratio(df)
 for rat, group in df_groups.items():

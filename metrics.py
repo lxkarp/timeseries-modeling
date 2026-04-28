@@ -11,7 +11,6 @@ from gluonts.ev.metrics import (
 
 from gluonts.ev.aggregations import Aggregation
 from gluonts.model.forecast import SampleForecast, QuantileForecast
-from scipy.stats import wasserstein_distance_nd
 from gluonts.ev.aggregations import Mean
 from gluonts.model.evaluation import evaluate_forecasts
 from gluonts.ev.stats import absolute_scaled_error
@@ -31,43 +30,111 @@ from typing import (
     List,
 )
 
+from pemd import (
+    probabilistic_value_distribution_emd,
+    value_distribution_emd,
+)
 
-def wd(data, forecast_type: str) -> np.ndarray:
-    return_wd: List[np.float64] = []
 
-    for i in range(len(data["label"])):
-        return_wd.append(
-            wasserstein_distance_nd(data["label"][i]._get_data(), data[forecast_type][i])
+def _label_values(label) -> np.ndarray:
+    if hasattr(label, "_get_data"):
+        label = label._get_data()
+    return np.asarray(label, dtype=float).reshape(-1)
+
+
+def _data_at(data, key, index: int) -> np.ndarray:
+    try:
+        values = data[key][index]
+    except KeyError:
+        values = data[str(key)][index]
+    return np.asarray(values, dtype=float).reshape(-1)
+
+
+def _seasonal_scale(data, index: int) -> float:
+    scale = np.asarray(data["seasonal_error"][index], dtype=float)
+    return float(np.nanmean(scale))
+
+
+def _scaled(values: np.ndarray, scale: Optional[float]) -> np.ndarray:
+    if scale is None:
+        return values
+    return values / scale
+
+
+def _forecast_samples(
+    data,
+    index: int,
+    quantile_levels: Optional[Collection[float]] = None,
+) -> np.ndarray:
+    forecast = data.maps[1].forecasts[index]
+
+    if isinstance(forecast, SampleForecast) or hasattr(forecast, "samples"):
+        samples = np.asarray(forecast.samples, dtype=float)
+    elif isinstance(forecast, QuantileForecast) or quantile_levels is not None:
+        if quantile_levels is None:
+            raise ValueError("quantile_levels are required for QuantileForecast pEMD")
+        samples = np.asarray([_data_at(data, q, index) for q in quantile_levels])
+    else:
+        raise TypeError(
+            "pEMD requires SampleForecast samples or quantile levels for "
+            "a QuantileForecast fallback"
         )
-    return np.array(return_wd)
+
+    if samples.ndim == 1:
+        samples = samples.reshape(1, -1)
+    if samples.ndim != 2:
+        raise ValueError("forecast samples must have shape (num_samples, horizon)")
+    return samples
 
 
-def swd(data, quantile_levels: Optional[Collection[float]] = None) -> np.ndarray:
+def emd_stat(
+    data,
+    forecast_type: str = "0.5",
+    scaled: bool = True,
+) -> np.ndarray:
     """
-    scaled wasserstein distance
+    Value-distribution EMD for each item in an evaluation batch.
+
+    This is Wasserstein-1 between empirical distributions of horizon values.
+    When ``scaled`` is true, both horizons are divided by the MASE seasonal
+    scale before computing EMD, yielding the scaled variant used in tables.
     """
-    return_wd: List[np.float64] = []
-
-    if type(data.maps[1].forecasts[0]) == SampleForecast:
-        forecast_dim = data.maps[1].forecasts[0].num_samples
-    elif type(data.maps[1].forecasts[0]) == QuantileForecast:
-        forecast_dim = len(quantile_levels)
-
+    distances: List[float] = []
     for i in range(len(data["label"])):
-        norm_actuals = data["label"][i]._get_data() / data["seasonal_error"][i]
-        if forecast_dim == 1:
-            norm_pred = data.maps[1].forecasts[0].mean / data["seasonal_error"][i]
-            norm_actuals = mk_spread(norm_actuals, num_samples=len(quantile_levels), delta=True)
-            norm_pred = mk_spread(norm_pred, num_samples=len(quantile_levels), delta=True)
+        scale = _seasonal_scale(data, i) if scaled else None
+        if scaled and (not np.isfinite(scale) or scale == 0.0):
+            distances.append(np.nan)
+            continue
 
-        else:
-            norm_pred = [data[quantile][i] for quantile in quantile_levels] / data['seasonal_error'][i]
-            interim_actuals = np.zeros_like(norm_pred)
-            interim_actuals[len(quantile_levels) // 2] = norm_actuals
-            norm_actuals = interim_actuals
-            # norm_actuals = np.tile(norm_actuals, (len(quantile_levels), 1))
-        return_wd.append(wasserstein_distance_nd(norm_pred, norm_actuals))
-    return np.array(return_wd)
+        actuals = _scaled(_label_values(data["label"][i]), scale)
+        forecast = _scaled(_data_at(data, forecast_type, i), scale)
+        distances.append(value_distribution_emd(actuals, forecast))
+    return np.array(distances)[:, np.newaxis]
+
+
+def pemd_stat(
+    data,
+    quantile_levels: Optional[Collection[float]] = None,
+    scaled: bool = True,
+) -> np.ndarray:
+    """
+    Probabilistic value-distribution EMD for each item in a batch.
+
+    For SampleForecasts this uses forecast sample trajectories directly. For
+    QuantileForecasts, quantile curves are used as a fallback ensemble via the
+    comonotone coupling implied by shared quantile levels across the horizon.
+    """
+    distances: List[float] = []
+    for i in range(len(data["label"])):
+        scale = _seasonal_scale(data, i) if scaled else None
+        if scaled and (not np.isfinite(scale) or scale == 0.0):
+            distances.append(np.nan)
+            continue
+
+        actuals = _scaled(_label_values(data["label"][i]), scale)
+        samples = _scaled(_forecast_samples(data, i, quantile_levels), scale)
+        distances.append(probabilistic_value_distribution_emd(actuals, samples))
+    return np.array(distances)[:, np.newaxis]
 
 
 def mk_spread(timeseries, num_samples: int, delta: bool = True) -> np.ndarray:
@@ -77,19 +144,44 @@ def mk_spread(timeseries, num_samples: int, delta: bool = True) -> np.ndarray:
     interim[num_samples // 2] = timeseries
     return interim
 
+
 @dataclass
 class EMD(BaseMetricDefinition):
     """
-    Earth Mover's Distance (EMD) metric.
+    Value-distribution Earth Mover's Distance (EMD) metric.
     """
-    quantile_levels: Collection[float]
+    forecast_type: str = "0.5"
+    scaled: bool = True
 
     def __call__(self, axis: int) -> DirectMetric:
         return DirectMetric(
-            name=f"EMD",
-            # stat=partial(swd, forecast_type=self.q),
-            stat=partial(swd, quantile_levels=self.quantile_levels),
-            aggregate=ListAgg(axis=axis),
+            name="EMD",
+            stat=partial(
+                emd_stat,
+                forecast_type=self.forecast_type,
+                scaled=self.scaled,
+            ),
+            aggregate=Mean(axis=axis),
+        )
+
+
+@dataclass
+class PEMD(BaseMetricDefinition):
+    """
+    Probabilistic value-distribution EMD for sampled forecast trajectories.
+    """
+    quantile_levels: Optional[Collection[float]] = None
+    scaled: bool = True
+
+    def __call__(self, axis: int) -> DirectMetric:
+        return DirectMetric(
+            name="pEMD",
+            stat=partial(
+                pemd_stat,
+                quantile_levels=self.quantile_levels,
+                scaled=self.scaled,
+            ),
+            aggregate=Mean(axis=axis),
         )
 
 
@@ -112,7 +204,10 @@ class MeanDecileEMD(BaseMetricDefinition):
     def __call__(self, axis: int) -> DirectMetric:
         return DerivedMetric(
             name="MeanDecileEMD",
-            metrics={f"EMD[{q}]": EMD(q=q)(axis=axis) for q in self.quantile_levels},
+            metrics={
+                f"EMD[{q}]": EMD(forecast_type=str(q))(axis=axis)
+                for q in self.quantile_levels
+            },
             post_process=self.mean,
         )
 
@@ -213,7 +308,8 @@ def mk_metrics(context, forecast):
                 MASE(),
                 MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
                 # MeanDecileEMD(np.arange(0.1, 1.0, 0.1)),
-                EMD(np.arange(0.1, 1.0, 0.1)),
+                EMD(),
+                PEMD(np.arange(0.1, 1.0, 0.1)),
                 NRMSE(),
                 SMAPE(),
             ],
@@ -226,6 +322,7 @@ def mk_metrics(context, forecast):
                 "mean_weighted_sum_quantile_loss": "WQL",
                 # "MeanDecileEMD": "mdEMD",
                 "EMD": "EMD",
+                "pEMD": "pEMD",
                 # "NRMSE[mean]": "NRMSE",
                 # "sMAPE[0.5]": "SMAPE",
             },
@@ -250,6 +347,7 @@ def save_metrics_to_csv(metrics, config, output_path):
                 "MASE": metrics["MASE"],
                 "WQL": metrics["WQL"],
                 "EMD": metrics["EMD"],
+                "pEMD": metrics["pEMD"],
                 # "NRMSE": metrics["NRMSE"],
                 # "SMAPE": metrics["SMAPE"],
             }
@@ -297,11 +395,22 @@ def mk_viz(context, forecast, config):
         f'{config["model_name"]} {ratio} {cat} {config["segment_name"]}', fontsize=18
     )
     plt.title(
-        "metrics: EMD:{EMD:.4f}, MASE:{MASE:.4f}, WQL:{WQL:.4f}".format(**metrics),
+        (
+            "metrics: EMD:{EMD:.4f}, pEMD:{pEMD:.4f}, "
+            "MASE:{MASE:.4f}, WQL:{WQL:.4f}"
+        ).format(**metrics),
         fontsize=10,
         y=1,
     )
 
     plt.legend()
-    plt.savefig(f'./{config["model_name"]}_{ratio}_{cat}_{config["segment_name"]}.png')
+    plot_dir = os.environ.get("PLOT_DIR", "./out")
+    os.makedirs(plot_dir, exist_ok=True)
+    safe_ratio = str(ratio).replace(":", "-")
+    plt.savefig(
+        os.path.join(
+            plot_dir,
+            f'{config["model_name"]}_{safe_ratio}_{cat}_{config["segment_name"]}.png',
+        )
+    )
     return metrics

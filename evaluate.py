@@ -16,6 +16,7 @@ from gluonts.model.forecast import SampleForecast
 from tqdm.auto import tqdm
 
 from chronos import ChronosPipeline
+from metrics import PEMD
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
@@ -321,6 +322,7 @@ def main(
                 metrics=[
                     MASE(),
                     MeanWeightedSumQuantileLoss(np.arange(0.1, 1.0, 0.1)),
+                    PEMD(),
                 ],
                 batch_size=5000,
             )
@@ -335,7 +337,11 @@ def main(
     results_df = (
         pd.DataFrame(result_rows)
         .rename(
-            {"MASE[0.5]": "MASE", "mean_weighted_sum_quantile_loss": "WQL"},
+            {
+                "MASE[0.5]": "MASE",
+                "mean_weighted_sum_quantile_loss": "WQL",
+                "pEMD": "pEMD",
+            },
             axis="columns",
         )
         .sort_values(by="dataset")

@@ -4,8 +4,9 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from scipy.stats import wasserstein_distance
 from scipy.optimize import minimize
+
+from pemd import value_distribution_emd
 
 ts_2 = np.array([0, 0, 5, 6, 0, 5, 0, 0, 4, 0, 0, 0, 6, 0])
 ts_1 = np.array([0, 0, 5, 6, 0, 5, 0, 0, 0, 8, 0, 0, 6, 0])
@@ -31,7 +32,7 @@ def MSE(u, f):
 def area_between(u, f):
     return np.sum(np.abs(u - f))
 
-print("Wasserstein Distance:", wasserstein_distance(ts_2, ts_1))
+print("Wasserstein Distance:", value_distribution_emd(ts_2, ts_1))
 print("Mean Absolute Seasonal Error:", MASE(ts_2, ts_1))
 print("Mean Squared Error:", MSE(ts_2, ts_1))
 print("Area Between:", area_between(ts_2, ts_1))
@@ -53,7 +54,7 @@ ts_3 = result.x
 
 print("Optimized area between:", area_between(ts_1, ts_3))
 print("MASE:", MASE(ts_1, ts_3))
-print("Wasserstein Distance:", wasserstein_distance(ts_1, ts_3))
+print("Wasserstein Distance:", value_distribution_emd(ts_1, ts_3))
 
 df['Time Series 3'] = ts_3
 plt.figure(figsize=(10, 4))
